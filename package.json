@@ -1,0 +1,13 @@
+{
+  "name": "misen-space",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Landing page for misen.space — Misen, a spatial UI launcher for personal apps.",
+  "scripts": {
+    "dev": "wrangler pages dev . --port 8788",
+    "deploy": "wrangler pages deploy . --project-name=misen-space"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}
