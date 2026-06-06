@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Pages Functions run only on /api/* — everything else is served as a static asset.",
-  "include": ["/api/*"],
+  "description": "Pages Functions run on /api/* (signup) and /demo/* (Basic Auth gate). Everything else is served as a static asset.",
+  "include": ["/api/*", "/demo/*"],
   "exclude": []
 }

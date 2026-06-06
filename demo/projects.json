@@ -1,0 +1,314 @@
+{
+  "projects": [
+    {
+      "id": "day-planner",
+      "title": "Agenda",
+      "domain": "self",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8764/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/day-planner/Launch Day Planner.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/day-planner"
+      }
+    },
+    {
+      "id": "library",
+      "title": "Bookmarks",
+      "domain": "media",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8752/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/library/Launch Library.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/library"
+      }
+    },
+    {
+      "id": "organize-cms",
+      "title": "CMS",
+      "domain": "tools",
+      "kind": "localWeb",
+      "showOnHome": false,
+      "embed": {
+        "url": "http://127.0.0.1:8763/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/organize-cms/Launch Organize CMS.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/organize-cms"
+      }
+    },
+    {
+      "id": "misen-demo",
+      "title": "Demo",
+      "domain": "demo",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8766/"
+      },
+      "start": {
+        "type": "script",
+        "command": "$MISEN_HOME/demo/Launch Demo.command",
+        "cwd": "$MISEN_HOME/demo"
+      }
+    },
+    {
+      "id": "ereader",
+      "title": "Ebooks",
+      "domain": "media",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8760/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/ereader/Launch Ereader.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/ereader"
+      }
+    },
+    {
+      "id": "events-digest",
+      "title": "Events",
+      "domain": "places",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8754/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/events-digest/Launch Events Digest.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/events-digest"
+      }
+    },
+    {
+      "id": "font-manager",
+      "title": "Fonts",
+      "domain": "tools",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8762/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/font-manager/Launch Font Manager.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/font-manager"
+      }
+    },
+    {
+      "id": "email-whiteboard-app",
+      "title": "Inbox",
+      "domain": "work",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8743/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/email-whiteboard-app/Launch Whiteboard.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/email-whiteboard-app"
+      }
+    },
+    {
+      "id": "email-whiteboard-v2",
+      "title": "Inbox v2",
+      "domain": "work",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8743/index-flow.html"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/email-whiteboard-app/Launch Whiteboard.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/email-whiteboard-app"
+      }
+    },
+    {
+      "id": "igstories-viewer",
+      "title": "Instagram",
+      "domain": "people",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:5001/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/igstories/Launch IG Stories Viewer.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/igstories"
+      }
+    },
+    {
+      "id": "daily-journal",
+      "title": "Journal",
+      "domain": "self",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8749/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/daily-journal/Launch Daily Journal.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/daily-journal"
+      }
+    },
+    {
+      "id": "kitchen",
+      "title": "Kitchen",
+      "domain": "home",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8745/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/kitchen/Launch Kitchen.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/kitchen"
+      }
+    },
+    {
+      "id": "media-tracker",
+      "title": "Media",
+      "domain": "media",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8747/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/media-tracker/Launch Media Tracker.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/media-tracker"
+      }
+    },
+    {
+      "id": "digest",
+      "title": "Messaging",
+      "domain": "media",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8753/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/digest/Launch Digest.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/digest"
+      }
+    },
+    {
+      "id": "residency-tracker",
+      "title": "Open Calls",
+      "domain": "work",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8757/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/residency-tracker/Launch Residency Tracker.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/residency-tracker"
+      }
+    },
+    {
+      "id": "atlas",
+      "title": "Places",
+      "domain": "places",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8758/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/atlas/Launch Atlas.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/atlas"
+      }
+    },
+    {
+      "id": "garden-tracker",
+      "title": "Plants",
+      "domain": "home",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8750/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/garden-tracker/Launch Garden Tracker.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/garden-tracker"
+      }
+    },
+    {
+      "id": "project-sketchbook",
+      "title": "Projects",
+      "domain": "self",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8761/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/project-sketchbook/Launch Project Sketchbook.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/project-sketchbook"
+      }
+    },
+    {
+      "id": "sheet-music-tracker",
+      "title": "Sheet Music",
+      "domain": "media",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8746/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/sheet-music-tracker/Launch Sheet Music Tracker.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/sheet-music-tracker"
+      }
+    },
+    {
+      "id": "follows-audit",
+      "title": "Socials",
+      "domain": "tools",
+      "kind": "localWeb",
+      "showOnHome": false,
+      "embed": {
+        "url": "http://127.0.0.1:8759/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/follows-audit/Launch Follows Audit.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/follows-audit"
+      }
+    },
+    {
+      "id": "whiteboard-tasks",
+      "title": "Tasks",
+      "domain": "work",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8748/whiteboard-tasks.html"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/whiteboard/Launch Whiteboard Tasks.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/whiteboard"
+      }
+    },
+    {
+      "id": "job-search",
+      "title": "Work",
+      "domain": "work",
+      "kind": "localWeb",
+      "embed": {
+        "url": "http://127.0.0.1:8756/"
+      },
+      "start": {
+        "type": "script",
+        "command": "/Users/sami/Documents/Projects/Apps/job-search/Launch Job Search.command",
+        "cwd": "/Users/sami/Documents/Projects/Apps/job-search"
+      }
+    }
+  ]
+}

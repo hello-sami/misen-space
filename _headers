@@ -12,3 +12,15 @@
 
 /app.js
   Cache-Control: public, max-age=3600
+
+# Misen demo — heavy, content-stable 3D assets can cache hard.
+/demo/models/*
+  Cache-Control: public, max-age=604800, immutable
+/demo/textures/*
+  Cache-Control: public, max-age=604800, immutable
+/demo/hdris/*
+  Cache-Control: public, max-age=604800, immutable
+/demo/posters/*
+  Cache-Control: public, max-age=604800, immutable
+/demo/vendor/*
+  Cache-Control: public, max-age=604800, immutable

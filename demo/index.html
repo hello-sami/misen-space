@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misen — interactive demo</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="An interactive demo of Misen — a spatial UI launcher where your apps live as furniture in a room." />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="diorama.css" />
+  <link rel="stylesheet" href="demo.css" />
+</head>
+<body>
+  <div class="demo-badge">
+    <span class="dot" aria-hidden="true"></span>
+    <span>Misen</span>
+    <span class="demo-badge-sub">interactive demo · hover a piece, click to peek</span>
+  </div>
+
+  <main class="demo-main">
+    <!-- .mainBody is the diorama's overlay coordinate origin and must be the
+         direct parent of #roomContainer. -->
+    <div class="mainBody">
+      <div id="roomContainer" class="roomContainer"></div>
+    </div>
+  </main>
+
+  <div id="demoStatus" class="demo-status">
+    <div class="spinner" aria-hidden="true"></div>
+    <div>Loading the room…</div>
+  </div>
+
+  <!-- Faux app preview (filled + toggled by demo.js) -->
+  <div id="preview" class="preview" hidden role="dialog" aria-modal="true" aria-label="App preview">
+    <div class="preview-card">
+      <div class="preview-shot"></div>
+      <div class="preview-body">
+        <p class="preview-eyebrow">Preview</p>
+        <h2 class="preview-title"></h2>
+        <p class="preview-blurb"></p>
+        <p class="preview-note">
+          This is a static preview. In the real Misen, clicking a piece launches the
+          app live — each one runs locally on its own machine, no cloud.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- three.js r128 + addons, vendored locally (global-attaching builds).
+       Order matters: core, then loaders. -->
+  <script src="vendor/three-0.128.0/build/three.min.js"></script>
+  <script src="vendor/three-0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="vendor/three-0.128.0/examples/js/loaders/RGBELoader.js"></script>
+  <!-- brand data (optional; used for accents/labels) -->
+  <script src="misen-brand.js"></script>
+  <!-- diorama.config.js MUST load before diorama.js (which reads it at eval time) -->
+  <script src="diorama.config.js"></script>
+  <script src="diorama.js"></script>
+  <script src="demo.js"></script>
+</body>
+</html>

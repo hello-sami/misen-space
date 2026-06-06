@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+  <rect x="0" y="0" width="220" height="220" rx="44" fill="#F5F2EC"/>
+  <line x1="32" y1="45"  x2="188" y2="45"  stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="32" y1="85"  x2="188" y2="85"  stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="32" y1="125" x2="188" y2="125" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="32" y1="165" x2="188" y2="165" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="52"  y1="25" x2="52"  y2="195" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="92"  y1="25" x2="92"  y2="195" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="132" y1="25" x2="132" y2="195" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="172" y1="25" x2="172" y2="195" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>
+  <line x1="52" y1="85" x2="52"  y2="165" stroke="rgba(0,0,0,0.16)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="52" y1="85" x2="92"  y2="125" stroke="rgba(0,0,0,0.16)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="132" y1="85" x2="92" y2="125" stroke="rgba(0,0,0,0.16)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="132" y1="85" x2="132" y2="165" stroke="rgba(0,0,0,0.16)" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="52"  cy="85"  r="10" fill="#C97E0C"/>
+  <circle cx="52"  cy="125" r="10" fill="#D85A30"/>
+  <circle cx="52"  cy="165" r="10" fill="#256040"/>
+  <circle cx="92"  cy="125" r="10" fill="#2C2C2A"/>
+  <circle cx="132" cy="85"  r="10" fill="#BA7517"/>
+  <circle cx="132" cy="125" r="10" fill="#7F77DD"/>
+  <circle cx="132" cy="165" r="10" fill="#D4537E"/>
+  <circle cx="52"  cy="45" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="92"  cy="45" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="132" cy="45" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="172" cy="45" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="172" cy="85"  r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="172" cy="125" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="172" cy="165" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="92" cy="85"  r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+  <circle cx="92" cy="165" r="10" fill="rgba(0,0,0,0.04)" stroke="rgba(0,0,0,0.13)" stroke-width="1.5"/>
+</svg>

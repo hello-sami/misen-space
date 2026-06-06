@@ -1,0 +1,321 @@
+/* Diorama UI overlay styles — extracted from diorama.js (was an
+   injected <style> in setupUI). Loaded via index.html. */
+
+.dior-btn {
+  background: rgba(251, 245, 233, 0.95);
+  color: #3a2f24;
+  border: 1px solid #e3d6bc;
+  padding: 8px 14px; border-radius: 10px;
+  font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(58, 47, 36, 0.10);
+  transition: transform 120ms ease, background 160ms ease;
+}
+.dior-btn:hover { background: #f3ebd9; transform: translateY(-1px); }
+.dior-btn:active { transform: translateY(0); }
+
+.dior-hover {
+  position: absolute; pointer-events: none; z-index: 6;
+  background: #1f1b2a; color: #f5f1e9;
+  padding: 6px 10px; border-radius: 8px;
+  font-size: 12px; font-weight: 500;
+  opacity: 0; transition: opacity 100ms ease;
+  transform: translate(12px, -50%);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  white-space: nowrap;
+}
+.dior-hover.show { opacity: 1; }
+.dior-hover .room-tag {
+  display: block; font-size: 10px; font-weight: 400;
+  color: rgba(245,241,233,0.55); margin-top: 1px; text-transform: capitalize;
+}
+
+.dior-move-hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 7;
+  background: #1f1b2a; color: #f5f1e9;
+  padding: 10px 16px; border-radius: 10px;
+  font-size: 12px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.30);
+  display: none;
+}
+.dior-move-hint.show { display: block; }
+.dior-move-hint b { color: #f3df9f; font-weight: 600; }
+.dior-move-hint kbd {
+  background: rgba(255,255,255,0.10);
+  padding: 1px 5px; border-radius: 3px;
+  font-size: 11px; font-family: ui-monospace, "SF Mono", monospace;
+}
+
+/* Held-piece toolbar — only visible while sticky-grab is active.
+   Sits a bit above the move-hint so both can show together. */
+.dior-held-bar {
+  position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+  z-index: 8;
+  display: none; gap: 6px; align-items: center;
+  background: rgba(31, 27, 42, 0.92);
+  padding: 6px; border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.32);
+}
+.dior-held-bar.show { display: flex; }
+.dior-held-bar .dior-held-btn {
+  background: #f3ebd9; color: #3a2f24;
+  border: 1px solid #d8c89e;
+  padding: 6px 12px; border-radius: 8px;
+  font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; line-height: 1;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.dior-held-bar .dior-held-btn:hover { background: #fff7e6; }
+.dior-held-bar .dior-held-btn:active { transform: translateY(1px); }
+.dior-held-bar .dior-held-btn[disabled] {
+  opacity: 0.4; cursor: not-allowed;
+}
+.dior-held-bar .dior-held-btn .glyph {
+  font-size: 14px; line-height: 1;
+}
+
+/* Floating "Restore deleted" button — bottom-right corner, only
+   visible when _deletedHistory has entries. Click pops the most
+   recent deletion back into the room. */
+.dior-restore {
+  position: absolute; bottom: 18px; right: 18px; z-index: 9;
+  display: none; align-items: center; gap: 6px;
+  background: #f3ebd9; color: #3a2f24;
+  border: 1px solid #d8c89e;
+  padding: 8px 14px; border-radius: 999px;
+  font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; line-height: 1;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+}
+.dior-restore.show { display: inline-flex; }
+.dior-restore:hover { background: #fff7e6; }
+.dior-restore:active { transform: translateY(1px); }
+.dior-restore .glyph { font-size: 16px; line-height: 1; }
+.dior-restore .dior-restore-count {
+  background: #3a2f24; color: #f3ebd9;
+  border-radius: 999px;
+  padding: 1px 7px; font-size: 11px; font-weight: 600;
+  min-width: 14px; text-align: center;
+}
+
+/* Speech-bubble popup for app launch / move. Backdrop is invisible —
+   it just catches outside-clicks to close. */
+.dior-modal-bg {
+  position: absolute; inset: 0;
+  background: transparent;
+  display: none;
+  z-index: 20;
+}
+.dior-modal-bg.show { display: block; }
+.dior-modal {
+  position: absolute;             /* placed by JS at piece's screen pos */
+  background: #fbf5e9;
+  border: 1px solid #d8c89e;
+  border-radius: 12px;
+  padding: 12px 14px 10px;
+  width: 240px;
+  box-shadow: 0 8px 24px rgba(58, 47, 36, 0.22), 0 2px 6px rgba(58, 47, 36, 0.10);
+  animation: dior-pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  transform-origin: var(--anchor-x, 30px) var(--anchor-y, 100%);
+}
+/* Speech-bubble tail at the bottom-left, pointing down to the piece.
+   Two layers — outer (border color) + inner (fill). */
+.dior-modal::before {
+  content: ''; position: absolute;
+  bottom: -8px; left: var(--tail-x, 24px);
+  width: 0; height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #d8c89e;
+}
+.dior-modal::after {
+  content: ''; position: absolute;
+  bottom: -7px; left: calc(var(--tail-x, 24px) + 1px);
+  width: 0; height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 7px solid #fbf5e9;
+}
+/* When the popup needs to flip below the piece, the tail flips too. */
+.dior-modal.below::before {
+  bottom: auto; top: -8px;
+  border-top: none; border-bottom: 8px solid #d8c89e;
+}
+.dior-modal.below::after {
+  bottom: auto; top: -7px;
+  border-top: none; border-bottom: 7px solid #fbf5e9;
+}
+.dior-modal-close {
+  position: absolute; top: 4px; right: 4px;
+  background: transparent; border: none;
+  width: 22px; height: 22px;
+  font-size: 18px; color: #9a8870;
+  cursor: pointer; padding: 0;
+  line-height: 1; border-radius: 5px;
+}
+.dior-modal-close:hover { background: rgba(0,0,0,0.06); color: #3a2f24; }
+.dior-modal-title {
+  margin: 0 22px 2px 0;
+  font-size: 14px; font-weight: 600; color: #3a2f24;
+}
+.dior-modal-sub {
+  margin: 0 0 8px;
+  font-size: 11px; color: #7a6a55;
+  text-transform: capitalize;
+}
+/* Summary section — per-app quick-summary block sitting above the
+   action row. Populated dynamically in openAppModal for apps that
+   have a configured summary fetcher (see APP_SUMMARIES). */
+.dior-modal-summary {
+  margin-bottom: 10px;
+  font-size: 11.5px; color: #3a2f24;
+}
+.dior-modal-summary[hidden] { display: none; }
+.dior-modal-summary-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #9a8870; margin-bottom: 4px;
+}
+.dior-modal-summary-count {
+  font-variant-numeric: tabular-nums;
+  color: #6a553a; font-weight: 600;
+}
+.dior-modal-summary-list {
+  display: flex; flex-direction: column; gap: 3px;
+  margin: 0; padding: 0; list-style: none;
+}
+.dior-modal-summary-list li {
+  display: flex; gap: 6px; align-items: flex-start;
+  line-height: 1.35; color: #3a2f24;
+}
+.dior-modal-summary-list li::before {
+  content: ''; flex: 0 0 4px; width: 4px; height: 4px;
+  margin-top: 6px; border-radius: 50%; background: #c98a7b;
+}
+.dior-modal-summary-text {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dior-modal-summary-empty {
+  color: #9a8870; font-style: italic;
+}
+.dior-modal-summary-more {
+  margin-top: 4px; font-size: 10px; color: #9a8870;
+}
+.dior-modal-row {
+  display: flex; gap: 4px; justify-content: flex-end;
+}
+.dior-modal-row .dior-btn {
+  padding: 5px 10px; font-size: 11px; border-radius: 7px;
+  box-shadow: none;
+}
+.dior-btn.primary {
+  background: #c98a7b; color: #fff; border-color: #b07261;
+}
+.dior-btn.primary:hover { background: #b07261; }
+@keyframes dior-pop {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Window popup — same speech-bubble chrome as the app modal, but the
+   two actions (Blinds / Change scene) are full-width stacked rows. */
+.dior-winmenu .dior-modal { width: 168px; }
+.dior-winmenu-row {
+  display: flex; flex-direction: column; gap: 5px; margin-top: 2px;
+}
+.dior-winmenu-row .dior-btn {
+  width: 100%; justify-content: center;
+  padding: 7px 10px; font-size: 12px; border-radius: 8px;
+  box-shadow: none;
+}
+
+/* ── Side app list + connector line ──────────────────────────────
+   A plaintext index of every launcher, in its OWN column to the
+   LEFT of the diorama frame (it's a flex child of .mainBody, so it
+   shrinks the frame rather than overlapping the scene). Hovering a
+   row — or the matching 3D object — highlights the row and draws
+   .dior-connector across the frame edge to the object. Click a row
+   to launch, same as clicking the object.
+
+   The connector SVG also lives on .mainBody (not inside the framed,
+   clipped .roomContainer) so the leader line can travel from the
+   column, across the gutter, and into the scene without being
+   clipped at the frame's rounded edge. */
+.mainBody { position: relative; }
+.dior-applist {
+  /* Flat list — no card chrome. The cream paper background, border,
+     shadow, and rounded corners were a UI affordance from when the
+     list was a discrete panel; sitting directly on the page is
+     cleaner and reclaims the unused whitespace on the left. */
+  flex: 0 0 128px; align-self: stretch;
+  margin: 16px 0 16px 12px;
+  position: relative; z-index: 12;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+.dior-applist::-webkit-scrollbar { width: 7px; }
+.dior-applist::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18); border-radius: 4px;
+}
+.dior-applist-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted, #7a6a55);
+  padding: 2px 8px 8px;
+}
+.dior-applist-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: none;
+  color: var(--text, #3a2f24);
+  font: inherit; font-size: 13px; font-weight: 500;
+  padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.3;
+  /* Lead-in delay (50ms) matches GLOW_DELAY so the row highlight, the
+     connector line, and the object glow all engage together. */
+  transition: background 150ms ease, color 150ms ease;
+  transition-delay: 50ms;
+}
+.dior-applist-item:hover { background: rgba(127, 184, 167, 0.16); }
+.dior-applist-item.active {
+  background: rgba(127, 184, 167, 0.28);
+  color: var(--text, #2a221b);
+}
+
+.dior-connector {
+  position: absolute; inset: 0; z-index: 11;
+  pointer-events: none; overflow: visible;
+  opacity: 0; transition: opacity 150ms ease; transition-delay: 50ms;
+}
+.dior-connector.show { opacity: 1; }
+.dior-connector-line {
+  fill: none;
+  /* Thin, solid, opaque white leader line. */
+  stroke: #ffffff; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.dior-connector-dot { fill: #ffffff; }
+
+/* ── Mirror cursor reflection ────────────────────────────────────
+   A clip box pinned to the mirror glass's on-screen rectangle; the
+   flipped pointer inside it tracks the real cursor mirrored across
+   the glass centerline, so it reads like a reflection bounded by the
+   frame. overflow:hidden clips it to the glass edges. */
+.dior-mirror-clip {
+  position: absolute; overflow: hidden; pointer-events: none; z-index: 6;
+}
+.dior-mirror-cursor {
+  position: absolute; width: 14px; height: 14px;
+  margin-left: -7px; margin-top: -7px;   /* center the hand on its anchor */
+  opacity: 0;
+  /* No flip + no transition — a 1:1 echo of the real cursor that
+     tracks its movement exactly, with no fade trailing it. */
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.55));
+}
+.dior-mirror-clip.show .dior-mirror-cursor { opacity: 0.62; }
