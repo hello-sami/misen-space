@@ -1,0 +1,16 @@
+# Cloudflare Pages config for misen.space.
+#
+# This file binds the `SIGNUPS` KV namespace to the Pages Functions so
+# `functions/api/signup.js` can read/write it. Without this binding, the
+# signup endpoint returns 503.
+#
+# To roll the namespace (e.g. clear the test list), create a new one via
+# `wrangler kv namespace create misen-signups-v2` and swap the id below.
+
+name = "misen-space"
+pages_build_output_dir = "."
+compatibility_date = "2026-06-01"
+
+[[kv_namespaces]]
+binding = "SIGNUPS"
+id = "de01fbd3c30948d9af4ebc1f6e0ba74c"
