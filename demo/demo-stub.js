@@ -14,10 +14,37 @@
   const noop = () => {};
   const unsub = () => noop;            // event subscribers return an unsubscribe fn
 
+  // ── Seed Sami's real furniture layout ──────────────────────────────
+  // The diorama reads its arrangement from localStorage ("misen.dioramaLayout")
+  // and falls back to config defaults when empty. To make the public demo match
+  // Sami's actual Misen, we fetch his exported layout and write it in BEFORE the
+  // room initializes. We must also pre-fill the "decorations seeded" set so the
+  // diorama's ensureDecorations() doesn't relocate the shelf/desk/chair/carpet
+  // back to their default slots. Gated by a version string so visitors can still
+  // rearrange (their changes stick until we bump SEED_VERSION).
+  const SEED_VERSION = 'sami-layout-2026-06-06';
+  async function seedLayout() {
+    try {
+      if (localStorage.getItem('misen.demoLayoutSeed') === SEED_VERSION) return;
+      const res = await fetch('diorama-layout.json');
+      const layout = await res.json();
+      localStorage.setItem('misen.dioramaLayout', JSON.stringify(layout));
+      // Decoration ids from diorama.js DECORATIONS[]; marking them seeded stops
+      // ensureDecorations() from moving the matching pieces to default slots.
+      localStorage.setItem('misen.dioramaDecsSeeded.v16',
+        JSON.stringify(['shelf', 'desk', 'officeChair', 'carpet-v2']));
+      localStorage.removeItem('misen.dioramaDeleted.v1');
+      localStorage.setItem('misen.demoLayoutSeed', SEED_VERSION);
+    } catch (e) { /* fall back to default layout */ }
+  }
+
   // ── The stubbed bridge ─────────────────────────────────────────────
   window.miseAPI = {
     // Data
     listProjects: async () => {
+      // Seed the saved layout first — renderer.js awaits listProjects() before
+      // initializing the room, so localStorage is set before loadPlacements().
+      await seedLayout();
       try {
         const res = await fetch('projects.json');
         const data = await res.json();
