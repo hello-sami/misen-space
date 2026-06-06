@@ -50,16 +50,16 @@ create one in `.wrangler/state/` on first run.
 
 ### One-time setup
 
-1. **Push to GitHub** (the repo `samirsmith/misen-space` is what this site
+1. **Push to GitHub** (the repo `hello-sami/misen-space` is what this site
    expects):
 
    ```sh
    cd ~/Documents/Projects/Sites/misen-space
-   git init -b main
-   git add .
-   git commit -m "init misen.space landing"
-   gh repo create samirsmith/misen-space --public --source=. --push
+   gh repo create hello-sami/misen-space --public --source=. --push
    ```
+
+   (Or just run `bash deploy.sh` from this folder — it does all of the
+   below in one shot.)
 
 2. **Cloudflare dashboard → Pages → Create a project → Connect to Git.**
    Pick `samirsmith/misen-space`. Framework preset: **None**.
