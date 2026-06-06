@@ -1,64 +1,246 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Misen — interactive demo</title>
-  <meta name="robots" content="noindex, nofollow" />
-  <meta name="description" content="An interactive demo of Misen — a spatial UI launcher where your apps live as furniture in a room." />
-  <link rel="icon" type="image/svg+xml" href="icon.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="diorama.css" />
-  <link rel="stylesheet" href="demo.css" />
-</head>
-<body>
-  <div class="demo-badge">
-    <span class="dot" aria-hidden="true"></span>
-    <span>Misen</span>
-    <span class="demo-badge-sub">interactive demo · hover a piece, click to peek</span>
-  </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Misen — interactive demo</title>
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="diorama.css" />
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <button class="brand" type="button" title="Home" aria-label="Go to home dashboard">
+        <div class="logoWrap"><div class="logo"><img class="logoImg" src="icon.svg" alt="" /></div><span class="logoBadge" id="logoBadge" hidden aria-label="notifications"></span></div>
+        <div>
+          <div class="title">Misen</div>
+          <div class="subtitle">Project launcher</div>
+        </div>
+      </button>
 
-  <main class="demo-main">
-    <!-- .mainBody is the diorama's overlay coordinate origin and must be the
-         direct parent of #roomContainer. -->
-    <div class="mainBody">
-      <div id="roomContainer" class="roomContainer"></div>
-    </div>
-  </main>
+      <div class="section">
+        <div class="sectionHeader">All Projects</div>
+        <div id="allList" class="list"></div>
+      </div>
+    </aside>
 
-  <div id="demoStatus" class="demo-status">
-    <div class="spinner" aria-hidden="true"></div>
-    <div>Loading the room…</div>
-  </div>
+    <main class="main">
+      <div id="appHeader" class="appHeader" hidden>
+        <button id="appHeaderHome" class="appHeaderHome" type="button"
+                title="Home (Esc)" aria-label="Go to home">
+          <span id="appHeaderHomeIcon" class="appHeaderHomeIcon" aria-hidden="true"></span>
+        </button>
+        <div id="appHeaderInfo" class="appHeaderInfo" role="button" tabindex="0"
+             aria-haspopup="menu" aria-expanded="false" aria-controls="appSwitcher"
+             title="Switch apps (⌘K)">
+          <span id="appHeaderIcon" class="appHeaderIcon" aria-hidden="true"></span>
+          <span id="appHeaderName" class="appHeaderName"></span>
+          <!-- When split is active, a second pill renders here showing the
+               project on the right pane plus a small "×" to close split. -->
+          <span id="appHeaderSplit" class="appHeaderSplit" hidden>
+            <span class="appHeaderSplitDivider" aria-hidden="true">+</span>
+            <span id="appHeaderSplitIcon" class="appHeaderIcon" aria-hidden="true"></span>
+            <span id="appHeaderSplitName" class="appHeaderName"></span>
+          </span>
+        </div>
+        <div class="appHeaderActions">
+          <button id="splitBtn" class="appHeaderBtn" type="button"
+                  title="Split (⌘⇧\\)" aria-label="Split screen">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+                 stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <line x1="12" y1="4" x2="12" y2="20"/>
+            </svg>
+            <span class="appHeaderBtnLabel">Split</span>
+          </button>
+          <div class="appHeaderHint" aria-hidden="true">
+            <kbd>Esc</kbd> home · <kbd>⌘R</kbd> reload
+          </div>
+        </div>
+      </div>
 
-  <!-- Faux app preview (filled + toggled by demo.js) -->
-  <div id="preview" class="preview" hidden role="dialog" aria-modal="true" aria-label="App preview">
-    <div class="preview-card">
-      <div class="preview-shot"></div>
-      <div class="preview-body">
-        <p class="preview-eyebrow">Preview</p>
-        <h2 class="preview-title"></h2>
-        <p class="preview-blurb"></p>
-        <p class="preview-note">
-          This is a static preview. In the real Misen, clicking a piece launches the
-          app live — each one runs locally on its own machine, no cloud.
-        </p>
+      <!-- Split picker — anchored under the Split button. Filled from
+           projects.json on open; click an entry to open it on the right pane. -->
+      <div id="splitPicker" class="splitPicker" hidden role="menu" aria-label="Choose split app">
+        <div class="splitPickerHeader">Open on right</div>
+        <div id="splitPickerList" class="splitPickerList"></div>
+      </div>
+
+      <!-- Persistent app-switcher trigger — always visible on the home view
+           where the appHeader (and its chevron pill) is hidden. Gives visual
+           users a clear "open the app menu" affordance without needing to
+           know about ⌘K. Hidden by CSS whenever an app is open (the header
+           pill carries the trigger then). -->
+      <button id="shellSwitcher" class="shellSwitcher" type="button"
+              aria-haspopup="menu" aria-expanded="false" aria-controls="appSwitcher"
+              title="Switch apps (⌘K)">
+        <span id="shellSwitcherIcon" class="shellSwitcherIcon" aria-hidden="true"></span>
+        <span class="shellSwitcherLabel">Apps</span>
+        <span class="shellSwitcherKbd" aria-hidden="true">⌘K</span>
+      </button>
+
+      <!-- Enter desktop mode (wallpaper). Visible on the home view only; hidden
+           when an app is open or once already in desktop mode. Relaunches Misen
+           at the macOS wallpaper level via main's misen:enterDesktopMode. -->
+      <button id="desktopModeBtn" class="desktopModeBtn" type="button"
+              title="Set Misen as your desktop (wallpaper level)">
+        <span class="desktopModeBtnIcon" aria-hidden="true">🖥️</span>
+        <span class="desktopModeBtnLabel">Desktop</span>
+      </button>
+
+      <!-- App switcher dropdown — anchored under the appHeader's info pill.
+           Opens on click of #appHeaderInfo or globally via ⌘K. The list is
+           rendered by renderer.js from projects.json on open; the search
+           input filters by id, title, or label. -->
+      <div id="appSwitcher" class="appSwitcher" hidden role="menu" aria-label="Switch app">
+        <div class="appSwitcherHeader">
+          <input id="appSwitcherSearch" class="appSwitcherSearch" type="text"
+                 placeholder="Search apps…" autocomplete="off"
+                 aria-label="Search apps" />
+          <span class="appSwitcherKbd" aria-hidden="true">⌘K</span>
+        </div>
+        <div id="appSwitcherList" class="appSwitcherList" role="listbox"></div>
+        <div id="appSwitcherEmpty" class="appSwitcherEmpty" hidden>No matches</div>
+      </div>
+
+      <!-- Body row: room frame on the left, .hint (rail / loading / error copy) on the right. -->
+      <div class="mainBody">
+        <!-- 3D room view (the new home). Initialized lazily by renderer.js. -->
+        <div id="roomContainer" class="roomContainer" hidden></div>
+
+        <div class="hint">
+          <div class="hintTitle">Embed mode</div>
+          <div class="hintText">
+            Select a project on the left. Misen can embed local/localhost web apps, and auto-start server scripts when needed.
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── First-run onboarding wizard ───────────────────────────────────────
+         Shown when state.firstRun === true. Dismissed by completing all steps
+         or pressing Skip. Replayable from Help button added to sidebar. -->
+    <div id="onboarding" class="onboarding" hidden
+         aria-modal="true" role="dialog" aria-label="Welcome to Misen">
+      <div class="ob-card">
+        <!-- Step 1: Welcome -->
+        <div class="ob-step" data-step="1">
+          <div class="ob-logo-wrap" aria-hidden="true">
+            <img src="icon.svg" class="ob-logo" alt="" />
+          </div>
+          <h1 class="ob-title">Welcome to Misen</h1>
+          <p class="ob-body">Your personal launcher for local tools. Each app runs entirely on your machine — no cloud, no accounts, no tracking.</p>
+          <div class="ob-actions">
+            <button class="ob-btn ob-btn--primary" data-ob-next>Get started →</button>
+            <button class="ob-btn ob-btn--ghost" data-ob-skip>Skip</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Apps à la carte -->
+        <div class="ob-step" data-step="2" hidden>
+          <div class="ob-icons" aria-hidden="true">
+            <span>📚</span><span>🎬</span><span>📅</span><span>🌿</span>
+          </div>
+          <h2 class="ob-title">Apps à la carte</h2>
+          <p class="ob-body">Misen is the launcher — you pick which apps to install. A reading tracker, daily journal, media log, garden planner, and more.</p>
+          <p class="ob-body ob-body--muted">Each app is a small local server. Install only what you'll use.</p>
+          <div class="ob-actions">
+            <button class="ob-btn ob-btn--primary" data-ob-next>Got it →</button>
+            <button class="ob-btn ob-btn--ghost" data-ob-back>← Back</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Apps folder -->
+        <div class="ob-step" data-step="3" hidden>
+          <div class="ob-folder-icon" aria-hidden="true">📁</div>
+          <h2 class="ob-title">Where should apps live?</h2>
+          <p class="ob-body">Pick a folder on your Mac. Misen will look here for app servers to launch.</p>
+          <div class="ob-folder-row">
+            <span id="obFolderPath" class="ob-folder-path">~/misen-apps</span>
+            <button class="ob-btn ob-btn--ghost ob-btn--sm" id="obBrowseBtn" type="button">Browse…</button>
+          </div>
+          <p class="ob-body ob-body--muted" id="obFolderNote">The folder will be created if it doesn't exist.</p>
+          <div class="ob-actions">
+            <button class="ob-btn ob-btn--primary" id="obFolderNext" type="button">Looks good →</button>
+            <button class="ob-btn ob-btn--ghost" data-ob-back>← Back</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Done -->
+        <div class="ob-step" data-step="4" hidden>
+          <div class="ob-check" aria-hidden="true">✓</div>
+          <h2 class="ob-title">You're in</h2>
+          <p class="ob-body">Take a 30-second tour of Misen, or jump straight in and explore.</p>
+          <div class="ob-actions">
+            <button class="ob-btn ob-btn--primary" data-ob-tour>Take the tour</button>
+            <button class="ob-btn ob-btn--ghost" data-ob-finish>Start exploring</button>
+          </div>
+        </div>
+
+        <div class="ob-dots" aria-hidden="true">
+          <span class="ob-dot ob-dot--active" data-dot="1"></span>
+          <span class="ob-dot" data-dot="2"></span>
+          <span class="ob-dot" data-dot="3"></span>
+          <span class="ob-dot" data-dot="4"></span>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- three.js r128 + addons, vendored locally (global-attaching builds).
-       Order matters: core, then loaders. -->
-  <script src="vendor/three-0.128.0/build/three.min.js"></script>
-  <script src="vendor/three-0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="vendor/three-0.128.0/examples/js/loaders/RGBELoader.js"></script>
-  <!-- brand data (optional; used for accents/labels) -->
-  <script src="misen-brand.js"></script>
-  <!-- diorama.config.js MUST load before diorama.js (which reads it at eval time) -->
-  <script src="diorama.config.js"></script>
-  <script src="diorama.js"></script>
-  <script src="demo.js"></script>
-</body>
+    <!-- ── Tooltip tour overlay ────────────────────────────────────────────────
+         Driven by tourSteps[] in renderer.js. The spotlight tracks the target
+         element; the tooltip card floats nearby with step copy + nav buttons. -->
+    <div id="tourOverlay" class="tourOverlay" hidden>
+      <div id="tourSpotlight" class="tourSpotlight" aria-hidden="true"></div>
+      <div id="tourTooltip" class="tourTooltip" role="tooltip">
+        <p id="tourText" class="tourText"></p>
+        <div class="tourFooter">
+          <span id="tourCounter" class="tourCounter"></span>
+          <div class="tourBtns">
+            <button class="ob-btn ob-btn--ghost" id="tourSkip">Skip tour</button>
+            <button class="ob-btn ob-btn--primary" id="tourNext">Next →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <span id="toastMsg"></span>
+    </div>
+
+    <!-- Misen brand data + constellation renderer. Loaded before renderer.js
+         so window.MisenBrand is available at sidebar/home render time. -->
+    <script src="misen-brand.js"></script>
+    <!-- three.js r128 + addons are vendored locally (vendor/three-0.128.0/)
+         so the diorama works offline and isn't exposed to a CDN outage or a
+         compromised CDN response running with Electron renderer privileges.
+         These are the global-attaching builds (THREE.GLTFLoader etc.), loaded
+         as plain scripts — keep them in this order: core first, then addons. -->
+    <script src="vendor/three-0.128.0/build/three.min.js"></script>
+    <script src="vendor/three-0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- HDRI loader: reads .hdr equirectangular environment maps and
+         hands them to PMREMGenerator, which the scene uses for IBL
+         (image-based lighting). One HDRI ≈ ambient + reflections for
+         every PBR material in the scene, no per-light tuning required. -->
+    <script src="vendor/three-0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <!-- (Post-processing pipeline removed — the diorama renders direct to
+         canvas, so EffectComposer / SSAOPass / shaders / SimplexNoise are
+         no longer loaded. See the comment in diorama.js setupScene.) -->
+    <!-- Home view: the fixed-camera diorama. Exposes window.MiseRoom so
+         renderer.js drives it without knowing the implementation.
+         diorama.config.js (app registry + room constants) MUST load first —
+         diorama.js destructures window.MiseDioramaConfig at eval time. -->
+    <script src="diorama.config.js"></script>
+    <script src="diorama.js"></script>
+    <!-- DEMO: stub window.miseAPI (Electron bridge) + faux app preview.
+         MUST load before renderer.js, which captures window.miseAPI at eval. -->
+    <script src="demo-stub.js"></script>
+    <script src="renderer.js"></script>
+  </body>
 </html>
+

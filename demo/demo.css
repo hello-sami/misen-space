@@ -1,111 +1,20 @@
-/* misen.space/demo — standalone web wrapper for the Misen room diorama.
-   The diorama itself is styled by diorama.css; this file only sizes the
-   stage, defines the two CSS vars diorama.css expects (--text, --muted),
-   and styles the faux "app preview" overlay shown when a piece is clicked. */
+/* misen.space/demo — web-only tweaks layered on top of the real Misen shell
+   (styles.css). styles.css handles the sidebar + framed room layout; this file
+   only (1) hides launcher chrome that's meaningless on the web, and (2) styles
+   the faux "app preview" overlay shown when a piece/app is opened. */
 
-:root {
-  --text: #1a1a1a;
-  --muted: #8a857a;
-  --paper: #f5f2ec;
-  --ink: #1a1a1a;
-  --accent: #b8541e;
-}
+html, body { height: 100%; margin: 0; }
 
-* { box-sizing: border-box; }
+/* The "Desktop" (wallpaper-level) button relaunches the Electron app — no
+   meaning on the web, so hide it. Everything else (sidebar, app switcher,
+   the framed 3D room) is the genuine windowed Misen experience. */
+#desktopModeBtn { display: none !important; }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: #15121c;
-  font-family: Inter, system-ui, sans-serif;
-  color: var(--ink);
-  overflow: hidden;
-}
-
-/* Stage — the diorama fills the whole viewport. .mainBody is the
-   overlayRoot the diorama uses as its coordinate origin for the
-   hover app-list and connector line, so it must be the direct parent
-   of #roomContainer and cover the viewport. */
-.demo-main { position: fixed; inset: 0; }
-
-.mainBody {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: row;
-  min-height: 0;
-}
-
-.roomContainer {
-  flex: 1 1 auto;
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-  background: linear-gradient(180deg, #2a2536 0%, #1a1722 100%);
-}
-
-/* Small "demo" ribbon, top-left, so visitors know what they're looking at. */
-.demo-badge {
-  position: fixed;
-  top: 14px;
-  left: 16px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(245, 242, 236, 0.92);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: 0.01em;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-}
-.demo-badge .dot {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: var(--accent);
-}
-.demo-badge .demo-badge-sub {
-  font-weight: 400;
-  color: #6a655c;
-}
-
-/* Loading + WebGL-unavailable states */
-.demo-status {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 14px;
-  color: #cbc7bd;
-  font-size: 14px;
-  text-align: center;
-  padding: 24px;
-  z-index: 40;
-  pointer-events: none;
-}
-.demo-status .spinner {
-  width: 26px; height: 26px;
-  border: 3px solid rgba(255,255,255,0.18);
-  border-top-color: rgba(255,255,255,0.7);
-  border-radius: 50%;
-  animation: demo-spin 0.9s linear infinite;
-}
-@keyframes demo-spin { to { transform: rotate(360deg); } }
-
-/* ── Faux app-preview overlay ─────────────────────────────────────────
-   Shown when a visitor clicks a piece. In the real app this would launch
-   the live local server; here we show a static screenshot + blurb. */
+/* ── Faux app-preview overlay ───────────────────────────────────────── */
 .preview {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 12000;            /* above the app header (z 10000) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -124,7 +33,7 @@ html, body {
   max-height: 88vh;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: #f5f2ec;
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
@@ -140,65 +49,37 @@ html, body {
   background: #e9e4da center/cover no-repeat;
   border-bottom: 1px solid rgba(0,0,0,0.08);
 }
-/* Placeholder for apps with no screenshot */
 .preview-shot.placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #efeae0 0%, #e3ddd1 100%);
 }
-.preview-shot.placeholder .ph-icon {
-  font-size: 54px;
-  opacity: 0.8;
-}
+.preview-shot.placeholder .ph-icon { font-size: 54px; opacity: 0.8; }
 
-.preview-body {
-  padding: 18px 20px 20px;
-}
+.preview-body { padding: 18px 20px 20px; }
 .preview-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  margin: 0 0 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #b8541e; margin: 0 0 4px;
 }
 .preview-title {
   font-family: Fraunces, Georgia, serif;
-  font-size: 24px;
-  font-weight: 500;
-  margin: 0 0 8px;
-  color: var(--ink);
+  font-size: 24px; font-weight: 500; margin: 0 0 8px; color: #1a1a1a;
 }
 .preview-blurb {
-  font-size: 14.5px;
-  line-height: 1.5;
-  color: #4a463f;
-  margin: 0 0 14px;
+  font-size: 14.5px; line-height: 1.5; color: #4a463f; margin: 0 0 14px;
 }
 .preview-note {
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: #8a857a;
-  padding-top: 12px;
-  border-top: 1px solid rgba(0,0,0,0.08);
+  font-size: 12.5px; line-height: 1.45; color: #8a857a;
+  padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.08);
 }
-
 .preview-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+  position: absolute; top: 12px; right: 12px;
   width: 32px; height: 32px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.9);
-  color: #333;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border: none; border-radius: 50%;
+  background: rgba(255,255,255,0.9); color: #333;
+  font-size: 18px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 8px rgba(0,0,0,0.25);
   transition: background 140ms ease;
 }

@@ -1,0 +1,2986 @@
+:root{
+  /* -------------------------------------------------------------------
+     Misen branding system — May 2026
+     Paper / ink palette. Cream surface, deep ink, warm spice accents.
+     The launcher chrome uses these tokens so the home, headers, and
+     embedded chrome all read as one cream-and-ink system.
+     ------------------------------------------------------------------- */
+  --paper:        #F5F2EC;
+  --paper-warm:   #FAF8F3;
+  --paper-deep:   #EFEAE0;
+  --ink:          #1A1A1A;
+  --ink-soft:     #5A5A52;
+  --ink-mute:     #8A857A;
+  --rule:         rgba(0,0,0,0.10);
+  --rule-soft:    rgba(0,0,0,0.06);
+
+  /* Legacy tokens, mapped onto the paper palette so existing rules keep
+     working. The home dashboard still references --bg/--panel/--text/etc,
+     but they now resolve to cream + ink. */
+  --bg:      var(--paper-warm);
+  --panel:   var(--paper);
+  --panel2:  var(--paper-deep);
+  --text:    var(--ink);
+  --muted:   var(--ink-mute);
+  --border:  var(--rule);
+  --accent:  #B8541E;
+  --accent-rgb: 184,84,30;
+
+  /* -------------------------------------------------------------------
+     App-chrome accent vars. Used to be overridden per-room by the
+     ATMOSPHERES system (now removed); kept as a single neutral palette
+     so chrome elements that reference them still resolve.
+     ------------------------------------------------------------------- */
+  --app-tint:    transparent;
+  --app-surface: transparent;
+  --app-accent:  var(--accent);
+  --app-ink:     var(--text);
+  --app-mute:    var(--muted);
+  /* Sidebar tokens — kept dark by intent. The design's "in-context" mock
+     shows the launcher rail as the deep #0d0d14 chrome with cream tile
+     icons; the inverse of the cream main surface gives apps a clear edge. */
+  --sb-bg: #0d0d14;
+  --sb-text: #9898b8;
+  --sb-border: rgba(255,255,255,0.07);
+  --sb-hover: rgba(255,255,255,0.06);
+  --sb-active-bg: rgba(245, 242, 236, 0.10);
+  --sb-active-border: rgba(245, 242, 236, 0.30);
+  /* Sidebar removed — the constellation rail was illegible at 28px and
+     the appHeader switcher dropdown now carries app-to-app navigation.
+     --sidebar-w stays as a token (0px) so any rule that does
+     `calc(var(--sidebar-w) + …)` still resolves cleanly. */
+  --sidebar-w: 0px;
+  --header-h: 40px;  /* design calls for "tiny" 32px; we keep 40px so the
+                        launcher's split button + Esc/⌘R hints still fit */
+
+  /* Corner radii — match the apps' design system (--radius: 5px canon) */
+  --radius: 5px;
+  --radius-sm: 3px;
+
+  /* -------------------------------------------------------------------
+     Misen brand wordmark — color-shift system. The "Misen" half stays
+     in the surrounding text color, the suffix shifts to --misen-accent.
+     Same font, weight, size, case as the parent — only color changes.
+     Rendered by renderMisenLabel() in renderer.js.
+     ------------------------------------------------------------------- */
+  --misen-accent: #B8541E;
+
+  /* Per-app accent — set inline by renderer.js on .row, .homeCard, and
+     .appHeader so the wordmark suffix, hairline rules, and active states
+     all pick up the active app's color. Defaults to the master accent so
+     elements that don't carry the var still resolve. */
+  --app-accent-color: #B8541E;
+}
+
+/* Misen wordmark spans — applied to home pills, app header, recents,
+   tools strip, and the split picker. Inherit everything from the parent
+   so the system reads at every size, then shift the suffix's color. */
+.misen-pre {
+  /* inherits everything from parent — no override */
+  letter-spacing: -0.015em;
+}
+.misen-suf {
+  /* Picks up the per-app accent if a parent (.row, .homeCard, .appHeader)
+     declared --app-accent-color. Falls back to the master Misen orange. */
+  color: var(--app-accent-color, var(--misen-accent));
+  letter-spacing: -0.015em;
+}
+
+/* The space between "Misen" and the suffix shouldn't carry the suffix's
+   color cue — kept neutral to mimic the design's subtle separator. */
+.misen-suf::before {
+  content: '';
+}
+
+*{ box-sizing:border-box; }
+
+html,body{
+  margin:0;
+  height:100%;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.sidebar{
+  /* Sidebar removed — kept hidden with display:none so no layout space
+     reserved. Existing markup in index.html stays so renderer.js's
+     #allList lookups don't NPE; the rail just isn't painted anywhere. */
+  display: none;
+}
+
+.brand{
+  display:flex;
+  gap:0;
+  align-items:center;
+  padding:6px 0 14px;
+  justify-content:center;
+}
+.logo{
+  width:40px;
+  height:40px;
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  background: var(--paper);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.logoImg{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+/* When renderer.js replaces the brand <img> with the constellation SVG,
+   it lives directly inside .logo — same fill/sizing rules. */
+.logo svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
+.brand > div:not(.logo):not(.logoWrap){ display:none; }
+
+.section{
+  margin-top:12px;
+  background: rgba(255,255,255,0.04);
+  border:1px solid var(--sb-border);
+  border-radius:12px;
+  padding:8px;
+}
+.sectionHeader{
+  display:none;
+}
+
+.main{
+  position:absolute;
+  top:0;
+  left:var(--sidebar-w);
+  right:0;
+  bottom:0;
+  background: var(--bg);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+/* -------------------------------------------------------------------------
+   App header bar — visible when an embedded app is open
+   ---------------------------------------------------------------------- */
+
+.appHeader{
+  /* OVERLAY, not in flow. Showing/hiding the appHeader used to push .mainBody
+     down by 44px, which resized the room canvas mid-click — ResizeObserver
+     fired onResize, which resets camera.position.z, producing a visible
+     "view reset" jitter and a brief flash of the dark roomContainer
+     background before the canvas re-rendered. Position:absolute removes the
+     header from flex flow so .mainBody (and the room canvas) keeps a stable
+     size; the header just floats above the top 44px. The WebContentsView's
+     bounds already start at HEADER_HEIGHT (set from --header-h, not from
+     the live element rect), so the embed area stays correct either way. */
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:var(--header-h);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 14px;
+  /* Cream paper surface with an accent hairline at the bottom — the
+     design's "tiny" chrome strip lives in the launcher chrome. The hairline
+     is the active app's accent at low opacity (set inline by renderer.js
+     via --app-accent-color). */
+  background: var(--paper);
+  color: var(--ink);
+  border-bottom: 1px solid color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 24%, var(--rule));
+  gap:12px;
+  /* Sit above the launch-transition white veil (z-index 9999) so the topbar
+     stays visible while the room is fading to white and back. */
+  z-index:10000;
+}
+
+.appHeader[hidden]{
+  display:none;
+}
+
+/* Home chip — master constellation, sits at the far left of the appHeader.
+   Click → goHome(). Replaces the brand sidebar's "go home" affordance.
+   The wordmark beside it ("Misen") is intentionally absent: the constellation
+   is the brand mark, and the current app pill (next to it) is what carries
+   the active wordmark. */
+.appHeaderHome{
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .14s, border-color .14s, transform .14s;
+}
+.appHeaderHome:hover{
+  background: var(--paper-deep);
+  border-color: var(--rule);
+  transform: scale(1.04);
+}
+.appHeaderHomeIcon{
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+}
+.appHeaderHomeIcon svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.appHeaderInfo{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  /* The whole pill now opens the switcher dropdown — make it look pressable.
+     A subtle outline + chevron after the wordmark hint at the affordance. */
+  cursor: pointer;
+  padding: 4px 8px 4px 6px;
+  margin-left: -6px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background .14s, border-color .14s;
+}
+.appHeaderInfo:hover,
+.appHeaderInfo[aria-expanded="true"]{
+  background: var(--paper-deep);
+  border-color: color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 22%, var(--rule));
+}
+.appHeaderInfo::after{
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  border-right: 1.5px solid var(--ink-mute);
+  border-bottom: 1.5px solid var(--ink-mute);
+  transform: rotate(45deg) translateY(-2px);
+  flex-shrink: 0;
+  transition: transform .15s;
+}
+.appHeaderInfo[aria-expanded="true"]::after{
+  transform: rotate(-135deg) translateY(-2px);
+}
+
+.appHeaderIcon{
+  font-size:15px;
+  line-height:1;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  /* Constellation icons render at 22px in the strip — matches the design's
+     "tiny" header density. The wrapper is sized so the SVG sits flush
+     against the wordmark. */
+  width: 22px;
+  height: 22px;
+  color: var(--app-accent-color, var(--misen-accent));
+}
+
+.appHeaderIcon svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
+
+.appHeaderName{
+  font-size:13px;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  color:var(--ink);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* Keyboard-shortcut hint on the right of the app header bar.
+   Replaces the former reload/home buttons — Cmd+R and Esc are handled
+   globally via before-input-event in main.js. */
+.appHeaderHint{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-shrink:0;
+  color:var(--ink-mute);
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size:10px;
+  letter-spacing:0.06em;
+  text-transform: uppercase;
+}
+
+.appHeaderHint kbd{
+  font-family: inherit;
+  font-size:10px;
+  font-weight:500;
+  padding:1px 5px;
+  border:1px solid var(--rule);
+  border-radius:var(--radius-sm);
+  background:var(--paper-deep);
+  color:var(--ink-soft);
+  line-height:1.3;
+  letter-spacing: 0.04em;
+}
+
+/* -------------------------------------------------------------------------
+   Split-screen — header indicator, button, and picker overlay
+   ---------------------------------------------------------------------- */
+
+.appHeaderActions{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-shrink:0;
+}
+
+.appHeaderBtn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 10px;
+  height:26px;
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--bg);
+  color:var(--text);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  line-height:1;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.appHeaderBtn:hover{
+  background:var(--panel2);
+  border-color:color-mix(in srgb, var(--text) 18%, var(--border));
+}
+
+.appHeaderBtn.active{
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+}
+
+.appHeaderBtnLabel{
+  /* Hide the text label in the narrow window of cramped layouts; icon alone
+     still communicates the action. The keyboard shortcut is in `title`. */
+}
+
+/* The "+ Calendar" indicator that appears next to the primary app name when
+   split is active. Reads as one visual unit with the primary name. */
+.appHeaderSplit{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-left:4px;
+  min-width:0;
+}
+
+.appHeaderSplit[hidden]{
+  display:none;
+}
+
+.appHeaderSplitDivider{
+  color:var(--muted);
+  font-size:13px;
+  font-weight:500;
+  opacity:0.7;
+}
+
+/* Picker drawer — slides in from the right edge while the embed view
+   shrinks horizontally to make room. Anchored top-to-bottom so the entire
+   right column reads as a single drawer surface, not a small dropdown
+   floating in an empty rectangle. */
+.splitPicker{
+  position:absolute;
+  top: var(--header-h);
+  right: 0;
+  bottom: 0;
+  z-index: 10001;  /* above appHeader (10000) */
+  width: 260px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 18px rgba(15,23,42,.08);
+  padding: 8px;
+}
+
+.splitPicker[hidden]{
+  display:none;
+}
+
+.splitPickerHeader{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 8px 4px;
+}
+
+.splitPickerList{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+}
+
+.splitPickerItem{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor:pointer;
+  font-size:12px;
+  color:var(--text);
+  background:transparent;
+  border:none;
+  text-align:left;
+  width:100%;
+  line-height:1.2;
+}
+
+.splitPickerItem:hover{
+  background: var(--panel2);
+}
+
+.splitPickerItem .iconEmoji,
+.splitPickerItem svg{
+  flex-shrink:0;
+  color: var(--muted);
+}
+
+.splitPickerEmpty{
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------
+   App switcher dropdown — replaces the old constellation sidebar.
+   Anchored beneath the appHeader's info pill, ~320px wide, with a search
+   input and a scrollable list of every project keyed by id/title/label.
+   ⌘K opens it from anywhere; Esc / outside-click closes it.
+   ---------------------------------------------------------------------- */
+.appSwitcher{
+  position: absolute;
+  top: var(--header-h);
+  left: 12px;
+  z-index: 10001;  /* above appHeader (10000) */
+  width: 340px;
+  max-height: min(560px, calc(100vh - var(--header-h) - 24px));
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.06),
+    0 18px 40px rgba(0,0,0,0.12);
+  overflow: hidden;
+}
+.appSwitcher[hidden]{
+  display: none;
+}
+
+.appSwitcherHeader{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--paper-warm);
+}
+.appSwitcherSearch{
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  outline: none;
+  transition: border-color .14s, box-shadow .14s;
+}
+.appSwitcherSearch::placeholder{
+  color: var(--ink-mute);
+}
+.appSwitcherSearch:focus{
+  border-color: color-mix(in srgb, var(--misen-accent) 50%, var(--rule));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--misen-accent) 14%, transparent);
+}
+.appSwitcherKbd{
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  flex-shrink: 0;
+}
+
+.appSwitcherList{
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: thin;
+}
+.appSwitcherList::-webkit-scrollbar{ width: 8px; }
+.appSwitcherList::-webkit-scrollbar-thumb{
+  background: var(--paper-deep);
+  border-radius: 4px;
+}
+
+.appSwitcherSection{
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-mute);
+  padding: 10px 10px 4px;
+}
+.appSwitcherSection:first-child{
+  padding-top: 4px;
+}
+
+.appSwitcherItem{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.appSwitcherItem:hover,
+.appSwitcherItem.is-active,
+.appSwitcherItem:focus{
+  outline: none;
+  background: var(--paper-deep);
+  border-color: color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 28%, var(--rule));
+}
+.appSwitcherItem[aria-selected="true"]{
+  background: var(--paper-warm);
+  border-left: 2px solid var(--app-accent-color, var(--misen-accent));
+  padding-left: 6px;
+}
+.appSwitcherItemIcon{
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.appSwitcherItemIcon svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.appSwitcherItemBody{
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.appSwitcherItemName{
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appSwitcherItemId{
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-mute);
+  letter-spacing: 0.04em;
+}
+.appSwitcherItemDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--app-accent-color, var(--misen-accent));
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.appSwitcherEmpty{
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+
+/* -------------------------------------------------------------------------
+   Shell-level switcher trigger — the persistent visible button that opens
+   the app switcher on the home view. Anchored to the top-left corner of
+   the main pane so it lines up with where the appHeader's info pill sits
+   in app mode (giving the switcher a single physical home in muscle
+   memory, regardless of which mode the launcher is in).
+   ---------------------------------------------------------------------- */
+.shellSwitcher{
+  /* Removed — the diorama home now shows a full app list in its left
+     column, so the corner "Apps" pill is redundant. Kept hidden with
+     display:none (markup stays in index.html) so renderer.js's
+     #shellSwitcher lookups + the ⌘K shortcut still resolve cleanly. */
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 9998;  /* below the dropdown (10001) and the appHeader (10000) */
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: background .14s, border-color .14s, box-shadow .14s, transform .14s;
+}
+.shellSwitcher:hover{
+  background: var(--paper-warm);
+  border-color: color-mix(in srgb, var(--misen-accent) 35%, var(--rule));
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+}
+.shellSwitcher:active{
+  transform: translateY(1px);
+}
+.shellSwitcherIcon{
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.shellSwitcherIcon svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.shellSwitcherLabel{
+  letter-spacing: -0.005em;
+}
+.shellSwitcherKbd{
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  color: var(--ink-mute);
+  margin-left: 2px;
+}
+
+/* The button is the home-view affordance only. When an app is open, the
+   appHeader's chevron pill IS the visible trigger — we hide this one then
+   so the two don't visually compete in the same corner. */
+body:has(#appHeader:not([hidden])) .shellSwitcher{
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
+   Ambient shell transition — the whole background eases to the active
+   room's key when an app is opened, and eases back to neutral on exit.
+   No layered objects, no zoom: just coordinated color transitions on the
+   surfaces that make up the Misen chrome.
+
+   `--shell-ease` is the shared timing across every transitioning property
+   so the background feels like a single body of light changing, not a
+   collection of elements fading independently.
+   ---------------------------------------------------------------------- */
+
+:root{
+  /* Ease-out curve — the color commits quickly in the first third, then
+     settles. Reads as responsive and alive, not draggy, while still
+     feeling like ambient light changing rather than a snap. */
+  --shell-ease: 420ms cubic-bezier(.2,.85,.2,1);
+}
+
+/* Base transitions — applied whether an atmosphere is active or not, so
+   entering AND leaving the tinted state both feel like one continuous
+   gradient shift rather than a snap in one direction. */
+.main,
+.hint.homeView,
+.appHeader{
+  transition:
+    background var(--shell-ease),
+    border-color var(--shell-ease),
+    color var(--shell-ease);
+}
+
+.appHeaderIcon,
+.appHeaderName,
+.appHeaderHint{
+  transition: color var(--shell-ease);
+}
+
+.row.active,
+.row.active .iconGlyph{
+  transition:
+    background var(--shell-ease),
+    border-color var(--shell-ease),
+    color var(--shell-ease);
+}
+
+/* Active atmosphere — sets the destination colors. The transitions above
+   carry us there. */
+/* Let the home dashboard itself warm toward the room's light too, so
+   the shift begins on the home view (where the user clicked) rather
+   than only becoming visible after setMainState('loading') fires. */
+/* Sidebar — soft accent inheritance on the active row only.
+   Kept subtle because the sidebar is dark; we just re-tint the halo. */
+/* Loading-state copy sits on top of the atmosphere wash */
+.hint{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  padding:24px;
+  overflow:hidden;
+}
+
+/* Home dashboard layout — overrides centering so cards sit at the top */
+.hint.homeView{
+  justify-content:flex-start;
+  padding:40px 36px;
+  overflow:auto;
+}
+
+.hintTitle{
+  font-size:16px;
+  font-weight:800;
+}
+
+.hintTitle.hintLoading{
+  color: var(--accent);
+  animation: hintPulse 1.6s ease-in-out infinite;
+}
+
+.hintTitle.hintError{
+  color: #dc2626;
+}
+
+@keyframes hintPulse{
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.hintText{
+  color:var(--muted);
+  margin-top:8px;
+  max-width:600px;
+  line-height:1.5;
+}
+
+.toast{
+  position: absolute;
+  left: calc(var(--sidebar-w) + 20px);
+  bottom: 22px;
+  background: rgba(255,255,255,0.98);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 12px;
+  max-width: 520px;
+  box-shadow: 0 12px 28px rgba(15,23,42,0.12);
+}
+
+.toast.show{ display:block; }
+.toast[hidden]{ display:none; }
+
+.list{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.row{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:4px 0;
+  border:1px solid transparent;
+  border-radius:10px;
+  position: relative;
+  cursor: grab;
+}
+
+.rowMain{
+  flex:1;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:58px;
+  height:44px;
+  border:none;
+  background:transparent;
+  cursor:pointer;
+  border-radius:10px;
+  padding:0;
+}
+
+.rowMain:focus{
+  outline: 2px solid rgba(91,76,245,.4);
+  outline-offset: 2px;
+}
+
+.row:hover{
+  background: var(--sb-hover);
+  border-color: var(--sb-border);
+}
+
+.row.active{
+  background: var(--sb-active-bg);
+  border-color: var(--sb-active-border);
+}
+
+.row.active .iconGlyph{
+  filter: none;
+}
+
+.row.dragging{
+  opacity:0.45;
+}
+
+.rowTitle{
+  display:none;
+}
+
+.rowMeta{
+  display:none;
+}
+
+.pinBtn{
+  display:none;
+}
+
+.iconGlyph{
+  font-size:20px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color: rgba(180, 180, 210, 0.7);
+  transition: color 0.15s, transform 0.15s;
+  width: 32px;
+  height: 32px;
+}
+
+/* Constellation SVGs in sidebar rows — they ship with the cream paper
+   background baked in. Clip the corners with the launcher's tile radius
+   so the cream tiles read as small chips on the dark rail. */
+.iconGlyph svg{
+  width:100%;
+  height:100%;
+  display:block;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.row:hover .iconGlyph{
+  color: rgba(200, 200, 230, 0.9);
+  transform: scale(1.04);
+}
+
+.row.active .iconGlyph{
+  color: #c4b5fd;
+}
+
+.row.active .iconGlyph svg{
+  /* When active, lift the cream tile slightly with the app's accent. */
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.06),
+    0 0 0 2px var(--app-accent-color, var(--misen-accent));
+}
+
+.iconEmoji{
+  font-size: 18px;
+  line-height: 1;
+}
+
+.iconLetter{
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+/* Brand is always clickable — it navigates back to the home dashboard */
+.brand{
+  cursor:pointer;
+  background:none;
+  border:none;
+  padding:0;
+  display:flex;
+  gap:0;
+  align-items:center;
+  width:100%;
+  justify-content:center;
+}
+.brand:hover .logo{
+  box-shadow: 0 4px 16px rgba(37,96,64,0.6);
+  transform: scale(1.06);
+}
+
+/* -------------------------------------------------------------------------
+   Home dashboard — status strip, greeting, grid, cards, status dots
+   ---------------------------------------------------------------------- */
+
+/* Thin persistent status strip — live counts + date + clock */
+.statusStrip{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 14px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:0 1px 2px rgba(22,22,42,0.04);
+  margin-bottom:20px;
+  font-size:12px;
+  flex-wrap:wrap;
+}
+.statusDate{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:2px 10px 2px 4px;
+  border-right:1px solid var(--border);
+  margin-right:4px;
+  min-width:56px;
+}
+.statusDate .dow{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.statusDate .dom{
+  font-size:18px;
+  font-weight:700;
+  line-height:1;
+  color:var(--text);
+}
+.statusPill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 10px;
+  background:var(--bg);
+  border-radius:999px;
+  color:var(--text);
+  font-weight:500;
+  white-space:nowrap;
+}
+.statusPill .dot{
+  width:6px; height:6px;
+  border-radius:50%;
+  background:#22c55e;
+  box-shadow:0 0 0 3px rgba(34,197,94,0.18);
+}
+.statusPill.running  .dot{ background:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,0.18); }
+.statusPill.notif    .dot{ background:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.18); }
+.statusPill.email    .dot{ background:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,0.18); }
+.statusPill.events   .dot{ background:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,0.18); }
+.statusPill.muted        { color:var(--muted); }
+.statusPill.muted .dot   { background:var(--muted); box-shadow:none; }
+
+.statusRight{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.statusClock{
+  font-size:12px;
+  color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+
+.homeGreeting{
+  font-family: 'Fraunces', 'Inter', serif;
+  font-size:40px;
+  font-weight:300;
+  letter-spacing:-0.015em;
+  line-height:1.1;
+  margin-bottom:6px;
+  color: var(--ink);
+}
+
+.homeGreeting em,
+.homeGreeting i{
+  font-style: italic;
+  color: var(--ink-soft);
+  font-weight: 300;
+}
+
+.homeIntro{
+  margin-bottom:26px;
+}
+
+.homeSubtitle{
+  font-size:14px;
+  color:var(--muted);
+  max-width:580px;
+  line-height:1.45;
+  margin-top:2px;
+}
+.homeSubtitle b{
+  color:var(--text);
+  font-weight:600;
+}
+
+.homeHiddenHint{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:10px;
+  line-height:1.4;
+}
+
+.homeGrid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap:16px;
+  width:100%;
+}
+
+/* Two-column layout below the greeting:
+   LEFT  — rooms + toolshed, fills available width
+   RIGHT — notifications panel, fixed ~360px
+   Collapses to single column on narrow windows. */
+.homeBelow{
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 28px;
+  align-items: start;
+  width: 100%;
+}
+
+.homeBelowMain{
+  min-width: 0;  /* allow grid children to shrink below content */
+}
+
+.homeBelowAside{
+  min-width: 0;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 1080px){
+  .homeBelow{
+    grid-template-columns: 1fr;
+  }
+  .homeBelowAside{
+    position: static;
+    max-height: none;
+  }
+  .homeBelow .notifSection{
+    position: static;
+  }
+}
+
+.homeCard{
+  position:relative;
+  background:var(--paper);
+  border:1px solid var(--rule-soft);
+  border-radius:var(--radius);
+  padding:18px 18px 16px;
+  cursor:pointer;
+  text-align:left;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  color:var(--ink);
+  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s;
+  box-shadow: 0 1px 2px rgba(22,22,42,0.03);
+}
+
+.homeCard:hover{
+  border-color: color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 40%, var(--rule));
+  transform:translateY(-2px);
+  box-shadow:
+    0 6px 18px rgba(22,22,42,0.08),
+    0 0 0 1px color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 14%, transparent);
+}
+
+.homeCard:active{
+  transform:translateY(-1px);
+  box-shadow: 0 2px 6px rgba(22,22,42,0.06);
+}
+
+.homeCard:focus{
+  outline:2px solid color-mix(in srgb, var(--app-accent-color, var(--misen-accent)) 40%, transparent);
+  outline-offset:2px;
+}
+
+/* Constellation icon chip — sized to match the design's launcher home grid
+   tile (~56-64px). The chip is the constellation SVG itself; the SVG ships
+   with its own paper background, so we just give it tile rounding. */
+.homeCardIcon{
+  width:56px;
+  height:56px;
+  border-radius:var(--radius);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: transparent;
+  flex-shrink:0;
+  overflow:hidden;
+}
+
+.homeCardIcon svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
+
+/* The .homeCard[data-color="N"] system was the old 9-chip rotation. The
+   per-app accent is now applied inline (renderer.js sets style="--app-accent-color:…"
+   on each card), so these blocks are no longer needed. Kept only as a quiet
+   fallback when an unknown app slips through without brand data. */
+.homeCard[data-color] .homeCardIcon { background: transparent; }
+
+.homeCardName{
+  font-size:14px;
+  font-weight:500;
+  letter-spacing:-0.01em;
+  color:var(--ink);
+  line-height:1.3;
+}
+
+.homeCardStatus{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font-size:11px;
+  color:var(--muted);
+}
+
+.homeCardDot{
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--muted);
+  flex-shrink:0;
+}
+
+.homeCardStatus.running{
+  color: #16a34a;
+}
+
+.homeCardStatus.running .homeCardDot{
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.2);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse{
+  0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+  50%       { box-shadow: 0 0 0 5px rgba(34,197,94,0.07); }
+}
+
+.homeCardStatus.probing{
+  opacity:0.5;
+}
+
+/* Old "house-themed" home layout (.roomCard / .roomIcon / .room-<name>
+   modifiers / .toolShedGrid) lived here. Removed — the home grid is now
+   driven by .homeCard + DOMAINS (see renderer.js), and the dollhouse is
+   the only "rooms" surface. */
+
+/* -------------------------------------------------------------------------
+   Sidebar logo notification badge
+   ---------------------------------------------------------------------- */
+
+.logoWrap{
+  position: relative;
+  display: inline-flex;
+}
+
+.logoBadge{
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0 4px;
+  min-width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--sb-bg);
+}
+
+.logoBadge[hidden]{ display: none; }
+
+/* -------------------------------------------------------------------------
+   Notification widget — home dashboard section
+   ---------------------------------------------------------------------- */
+
+.notifSection{
+  width: 100%;
+}
+
+.notifSection[hidden]{ display: none; }
+
+/* Inside the right-hand panel, fill the aside so the list takes
+   whatever height remains after the header. */
+.homeBelow .notifSection{
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.notifHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.notifHeaderTitle{
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.notifCount{
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.notifClearAll{
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.notifClearAll:hover{
+  color: var(--text);
+  background: rgba(15,23,42,.04);
+  border-color: rgba(15,23,42,.18);
+}
+
+.notifList{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  /* Subtle scrollbar in the panel */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22,22,42,0.15) transparent;
+}
+
+.notifList::-webkit-scrollbar { width: 8px; }
+.notifList::-webkit-scrollbar-thumb {
+  background: rgba(22,22,42,0.15);
+  border-radius: 8px;
+}
+.notifList::-webkit-scrollbar-track { background: transparent; }
+
+.notifItem{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.notifItemClickable{
+  cursor: pointer;
+}
+
+.notifItemClickable:hover{
+  border-color: rgba(91,76,245,0.25);
+  box-shadow: 0 2px 10px rgba(22,22,42,0.06);
+}
+
+.notifIcon{
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.notifContent{
+  flex: 1;
+  min-width: 0;
+}
+
+.notifTitle{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notifBody{
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notifMeta{
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.7;
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.notifDismiss{
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 0.12s, color 0.12s;
+}
+
+.notifItem:hover .notifDismiss{
+  opacity: 1;
+}
+
+.notifDismiss:hover{
+  color: #ef4444;
+}
+
+/* ===========================================================================
+   Domains homescreen
+   ===========================================================================
+   Implementation of the Misen Homescreen Redesign (claude.ai/design export):
+   - Six lanes of life: Work · Self · Media · Home · People · Places
+   - Holistic "Pulling at you" rail above (Events / Inbox / Tasks)
+   - Quiet Tools strip below
+   Type system: Inter for UI, Fraunces for greeting/domain labels (italic blurbs),
+   JetBrains Mono for tags, counts, and event timestamps.
+   =========================================================================== */
+
+:root{
+  /* Domain palette — "warm" variant from the prototype's PALETTES.warm */
+  --d-work-ink:    #1f3661;
+  --d-work-accent: #3f6bc4;
+  --d-work-tint:   #eef3fb;
+  --d-work-glow:   #dde8fa;
+
+  --d-self-ink:    #3a1d6b;
+  --d-self-accent: #6d4cd6;
+  --d-self-tint:   #f0ebfa;
+  --d-self-glow:   #e6def7;
+
+  --d-media-ink:    #5e3f0a;
+  --d-media-accent: #a9771a;
+  --d-media-tint:   #f7eed5;
+  --d-media-glow:   #f0e2bd;
+
+  --d-home-ink:    #5e2520;
+  --d-home-accent: #b8453a;
+  --d-home-tint:   #fbe7e3;
+  --d-home-glow:   #f6d4ce;
+
+  --d-people-ink:    #1e4530;
+  --d-people-accent: #2f8f5e;
+  --d-people-tint:   #e3f0e7;
+  --d-people-glow:   #cde6d4;
+
+  --d-places-ink:    #5e2c14;
+  --d-places-accent: #c46a3f;
+  --d-places-tint:   #fbe1d2;
+  --d-places-glow:   #f6cfb6;
+
+  /* Lane accents for the rail */
+  --lane-events: #a9771a;
+  --lane-inbox:  #3f6bc4;
+  --lane-tasks:  #2f8f5e;
+
+  --urgent: #b8453a;
+  --soft-border: #ececf2;
+  --soft-bg:     #fafafd;
+}
+
+/* Override the home view chrome to match the new full-bleed layout */
+.hint.homeView{
+  padding: 24px 32px 40px;
+  background: var(--soft-bg);
+  display: block;
+  overflow: auto;
+  height: 100%;
+}
+
+/* ----- top bar (date / greeting / find) -------------------------------- */
+.homeView .homeTopBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:14px;
+  gap:24px;
+}
+.homeView .homeTopLeft{ min-width:0; }
+
+.homeView .homeDate{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11px;
+  letter-spacing:0.16em;
+  text-transform:uppercase;
+  color:#a8a8c0;
+  margin-bottom:4px;
+  font-variant-numeric: tabular-nums;
+}
+.homeView .homeDateGlyph{
+  display:inline-flex;
+  align-items:center;
+  margin-right:2px;
+  color:#a8a8c0;
+}
+.homeView .statusClock{ font-variant-numeric: tabular-nums; }
+
+/* HARD override of the legacy gradient .homeGreeting (line ~557) */
+.hint.homeView .homeGreeting{
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  margin: 0;
+  color: var(--text);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  background-clip: initial;
+}
+.hint.homeView .homeGreeting .homeGreetingDot{ color: var(--accent); }
+
+/* (homeSearch styles removed — the disabled "coming soon" button was
+   pulled from the markup until search actually ships.) */
+
+/* ----- Home body: 2-col layout (main + right rail) ---------------------- */
+/* The home view splits into a main column on the left (greeting was already
+   above this; here we have the domain shelves + tools strip) and a vertical
+   "Pulling at you" rail on the right that holds Events / Inbox / Tasks as
+   stacked cards. Below ~1100px wide we collapse to single-column with the
+   rail back on top, so nothing gets too cramped. */
+.homeView .homeBody{
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+  gap:18px;
+  align-items:start;
+}
+.homeView .homeMain{ min-width:0; }
+
+/* ----- Pulling-at-you rail (now vertical, sits on the right) ------------ */
+/* The rail is still the loudest object on the home view: warm cream "tray"
+   on a cool page background, three-color accent stripe along the top edge
+   previews the lane palette, lanes stack vertically inside as tinted cards
+   so the eye separates Events / Inbox / Tasks before any word is read. */
+.homeView .pullRail{
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, #fdf6e8 0%, #fbf0d8 100%);
+  border:1px solid #ecd9b0;
+  border-radius:14px;
+  padding:20px 14px 14px;
+  box-shadow:
+    0 6px 18px rgba(169,119,26,0.08),
+    0 1px 2px rgba(22,22,42,0.04);
+  align-self: start;
+  max-height: calc(100vh - 24px);
+  display:flex;
+  flex-direction:column;
+  min-height: 0;
+}
+.homeView .pullRail::before{
+  /* tri-color accent stripe — previews the lane palette */
+  content:"";
+  position:absolute;
+  top:0; left:14px; right:14px;
+  height:3px;
+  border-bottom-left-radius:3px;
+  border-bottom-right-radius:3px;
+  background: linear-gradient(
+    90deg,
+    var(--lane-events) 0%,
+    var(--lane-events) 33%,
+    var(--lane-inbox)  33%,
+    var(--lane-inbox)  66%,
+    var(--lane-tasks)  66%,
+    var(--lane-tasks)  100%
+  );
+  opacity: 0.85;
+}
+.homeView .pullRailHeader{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin-bottom:14px;
+  padding:0 4px;
+  gap:8px;
+}
+.homeView .pullRailTitle{
+  font-family:"Fraunces", Georgia, serif;
+  font-size:17px;
+  font-weight:500;
+  font-style:italic;
+  letter-spacing:-0.005em;
+  text-transform:none;
+  color:#5e3d1d;
+}
+.homeView .pullRailMeta{
+  font-size:10px;
+  color:#a47f4d;
+  font-family:"JetBrains Mono", monospace;
+  text-align:right;
+  line-height:1.3;
+}
+.homeView .pullRailLanes{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  /* rail header stays pinned; only the lane list scrolls when content
+     overflows, so the accent stripe + title stay visible */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  margin: 0 -4px; /* let scrollbar sit closer to the edge */
+  padding: 0 4px;
+}
+
+/* lane chrome — each lane is now its own card-within-a-card */
+.homeView .lane{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  background:#fff;
+  border:1px solid transparent;
+  border-radius:10px;
+  overflow:hidden;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+}
+.homeView .laneHeader{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 12px;
+  margin-bottom:0;
+  border-bottom:1px solid transparent;
+}
+.homeView .laneIcon{ display:inline-flex; }
+.homeView .laneLabel{
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:0.16em;
+  text-transform:uppercase;
+}
+.homeView .laneCount{
+  margin-left:auto;
+  font-family:"JetBrains Mono", monospace;
+  font-size:10px;
+  font-weight:600;
+  padding:2px 7px;
+  border-radius:10px;
+  background: rgba(0,0,0,0.05);
+  color:#7070a0;
+}
+.homeView .laneBody{
+  display:flex;
+  flex-direction:column;
+  gap:1px;
+  padding:6px 4px 8px;
+}
+.homeView .laneEmpty{
+  font-size:11px;
+  color:#c0c0d0;
+  font-style:italic;
+  padding:10px 12px;
+}
+
+/* === per-lane visual identity ========================================== */
+
+/* ---- Events lane: amber timeline / agenda ----------------------------- */
+.homeView .lane-events{
+  background: linear-gradient(180deg, #fdf5e3 0%, #ffffff 55%);
+  border-color: rgba(169,119,26,0.22);
+}
+.homeView .lane-events .laneHeader{
+  background: rgba(169,119,26,0.08);
+  border-bottom-color: rgba(169,119,26,0.18);
+}
+.homeView .lane-events .laneIcon,
+.homeView .lane-events .laneLabel{ color: var(--lane-events); }
+.homeView .lane-events .laneCount{
+  background: rgba(169,119,26,0.12);
+  color: var(--lane-events);
+}
+/* Vertical timeline line behind the row of dots — unique to Events. The
+   dot sits in the column gap of each eventItem; the line aligns with its
+   center: laneBody padding-left (4px) + item padding-left (10px) +
+   col1 width (50px) + half col-gap (9px) = 73px. */
+.homeView .lane-events .laneBody{ position:relative; }
+.homeView .lane-events .laneBody::before{
+  content:"";
+  position:absolute;
+  top:14px; bottom:14px;
+  left:73px;
+  width:1px;
+  background: rgba(169,119,26,0.22);
+  pointer-events:none;
+  z-index:0;
+}
+.homeView .lane-events .eventItem{ z-index:1; }
+
+/* ---- Inbox lane: cool blue mailroom ----------------------------------- */
+.homeView .lane-inbox{
+  background: linear-gradient(180deg, #eef3fc 0%, #ffffff 55%);
+  border-color: rgba(63,107,196,0.22);
+}
+.homeView .lane-inbox .laneHeader{
+  background: rgba(63,107,196,0.08);
+  border-bottom-color: rgba(63,107,196,0.18);
+}
+.homeView .lane-inbox .laneIcon,
+.homeView .lane-inbox .laneLabel{ color: var(--lane-inbox); }
+.homeView .lane-inbox .laneCount{
+  background: rgba(63,107,196,0.12);
+  color: var(--lane-inbox);
+}
+
+/* ---- Tasks lane: sage checklist --------------------------------------- */
+.homeView .lane-tasks{
+  background: linear-gradient(180deg, #ebf5ee 0%, #ffffff 55%);
+  border-color: rgba(47,143,94,0.22);
+}
+.homeView .lane-tasks .laneHeader{
+  background: rgba(47,143,94,0.08);
+  border-bottom-color: rgba(47,143,94,0.18);
+}
+.homeView .lane-tasks .laneIcon,
+.homeView .lane-tasks .laneLabel{ color: var(--lane-tasks); }
+.homeView .lane-tasks .laneCount{
+  background: rgba(47,143,94,0.12);
+  color: var(--lane-tasks);
+}
+
+/* =========================================================================
+   Each lane is its own information design. They look different on purpose
+   so the eye can identify Events / Inbox / Tasks pre-attentively, and so
+   each layout puts the field that matters most for that data type first.
+
+   - Events: TIME-FIRST. Big serif numeral + monospace unit + timeline dot,
+             colored by urgency. Answers "how soon is the next thing?"
+   - Inbox:  SENDER-FIRST. Avatar circle (stable hashed color) + sender +
+             subject + when. Answers "who needs me?"
+   - Tasks:  URGENCY-FIRST. Left edge stripe + checkbox + text + due-date
+             pill, all colored by urgency. Answers "what's due first?"
+   ======================================================================= */
+
+/* ---- Events lane: agenda timeline ------------------------------------- */
+.homeView .eventItem{
+  display:grid;
+  grid-template-columns: 50px 1fr;
+  column-gap:18px;
+  padding:9px 10px;
+  border:none;
+  background:transparent;
+  border-radius:6px;
+  cursor:pointer;
+  text-align:left;
+  font-family:inherit;
+  align-items:center;
+  position:relative;
+}
+.homeView .eventItem::before{
+  /* timeline dot, sits at the column gap center (item-x=69px) */
+  content:"";
+  position:absolute;
+  left:69px;
+  top:50%;
+  transform:translate(-50%, -50%);
+  width:8px; height:8px;
+  border-radius:50%;
+  background: var(--lane-events);
+  border: 2px solid #fff;
+  z-index:2;
+  transition: box-shadow 120ms ease-out;
+}
+.homeView .eventItem:hover{ background: rgba(169,119,26,0.07); }
+.homeView .eventItem:hover::before{ box-shadow: 0 0 0 3px rgba(169,119,26,0.16); }
+
+/* urgency tints — color the dot + numeral by how soon */
+.homeView .eventItem.urg-imminent::before{ background: var(--urgent); }
+.homeView .eventItem.urg-soon::before    { background: var(--lane-events); }
+.homeView .eventItem.urg-distant::before { background: rgba(169,119,26,0.45); }
+
+/* time stack: number on top (Fraunces 22px) + unit underneath (mono 9px) */
+.homeView .eventTime{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  line-height:1;
+}
+.homeView .eventTimeNum{
+  font-family:"Fraunces", Georgia, serif;
+  font-size:22px;
+  font-weight:500;
+  color:var(--lane-events);
+  font-variant-numeric: tabular-nums;
+  letter-spacing:-0.02em;
+  line-height:1;
+}
+.homeView .eventTimeUnit{
+  font-family:"JetBrains Mono", monospace;
+  font-size:9px;
+  font-weight:600;
+  letter-spacing:0.14em;
+  text-transform:uppercase;
+  color: rgba(169,119,26,0.7);
+  margin-top:3px;
+}
+.homeView .eventItem.urg-imminent .eventTimeNum,
+.homeView .eventItem.urg-imminent .eventTimeUnit{ color: var(--urgent); }
+.homeView .eventItem.urg-distant  .eventTimeNum{ color: rgba(169,119,26,0.7); }
+
+.homeView .eventBody{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  gap:1px;
+}
+.homeView .eventTitle{
+  font-size:13px;
+  font-weight:500;
+  color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.homeView .eventItem.urgent .eventTitle{ font-weight:600; }
+.homeView .eventSub{
+  font-family:"Fraunces", Georgia, serif;
+  font-style:italic;
+  font-size:11px;
+  color:#9a8a6a;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ---- Inbox lane: mailroom rows ---------------------------------------- */
+.homeView .inboxItem{
+  display:grid;
+  grid-template-columns: 28px 1fr auto;
+  column-gap:10px;
+  padding:6px 10px;
+  border:none;
+  background:transparent;
+  border-radius:6px;
+  cursor:pointer;
+  text-align:left;
+  font-family:inherit;
+  align-items:center;
+}
+.homeView .inboxItem:hover{ background: rgba(63,107,196,0.07); }
+
+.homeView .inboxAvatar{
+  width:28px; height:28px;
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:-0.01em;
+  /* background + color set inline (stable hue per sender) */
+}
+.homeView .inboxItem.urgent .inboxAvatar{
+  box-shadow: 0 0 0 2px var(--urgent);
+}
+
+.homeView .inboxLines{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  gap:1px;
+}
+.homeView .inboxSender{
+  font-style: normal; /* avatar carries identity now — drop the italic */
+  font-size:13px;
+  font-weight:500;
+  color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.homeView .inboxItem.urgent .inboxSender{ color: var(--urgent); font-weight:600; }
+.homeView .inboxSubject{
+  font-size:12px;
+  color:#7a7a98;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.homeView .inboxWhen{
+  font-family:"JetBrains Mono", monospace;
+  font-size:10px;
+  color:#a8a8c0;
+  align-self:flex-start;
+  padding-top:3px;
+  text-align:right;
+}
+
+/* ---- Tasks lane: checklist with urgency ------------------------------- */
+.homeView .taskItem{
+  display:grid;
+  grid-template-columns: 22px 1fr auto;
+  column-gap:10px;
+  padding:8px 10px 8px 14px;
+  border:none;
+  background:transparent;
+  border-radius:6px;
+  cursor:pointer;
+  text-align:left;
+  align-items:center;
+  font-family:inherit;
+  position:relative;
+}
+.homeView .taskItem:hover{ background: rgba(47,143,94,0.07); }
+
+/* left-edge urgency stripe — color encodes how soon */
+.homeView .taskItem::before{
+  content:"";
+  position:absolute;
+  left:5px; top:7px; bottom:7px;
+  width:3px;
+  border-radius:2px;
+  background: rgba(47,143,94,0.45);
+}
+.homeView .taskItem.urg-today::before{ background: var(--urgent); }
+.homeView .taskItem.urg-soon::before { background: #d8973f; }
+.homeView .taskItem.urg-later::before{ background: rgba(120,120,150,0.32); }
+
+.homeView .taskCheck{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color: var(--lane-tasks);
+  opacity:0.85;
+  transition: opacity 120ms;
+}
+.homeView .taskItem:hover .taskCheck{ opacity:1; }
+.homeView .taskItem.urg-today .taskCheck{ color: var(--urgent); }
+
+.homeView .taskText{
+  font-size:13px;
+  font-weight:500;
+  color:var(--text);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.homeView .taskItem.urg-today .taskText{ font-weight:600; }
+
+/* due-date pill, colored by urgency — same color family as the stripe */
+.homeView .taskDue{
+  font-family:"JetBrains Mono", monospace;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:0.10em;
+  text-transform:uppercase;
+  padding:3px 8px;
+  border-radius:99px;
+  white-space:nowrap;
+  background: rgba(120,120,150,0.10);
+  color:#7070a0;
+}
+.homeView .taskItem.urg-today .taskDue{
+  background: rgba(184,69,58,0.13);
+  color: var(--urgent);
+}
+.homeView .taskItem.urg-soon .taskDue{
+  background: rgba(216,151,63,0.16);
+  color: #a86a1d;
+}
+.homeView .taskItem.urg-later .taskDue{
+  background: rgba(120,120,150,0.10);
+  color: #7070a0;
+}
+
+/* ----- Domain shelves -------------------------------------------------- */
+/* Section-row layout: each room is a full-width section (no card chrome —
+   the card around each shelf is gone). A clean color-coded header sits
+   above an auto-filling grid of app tiles tinted with the room's color.
+   Reads top-to-bottom as a series of named "rooms" rather than as 2/3 cards
+   of icons in a column. */
+.homeView .domainShelves{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+/* Responsive: at narrower widths the rail collapses on top of the main
+   content, lanes go horizontal again, eventually all to one column. */
+@media (max-width: 1180px){
+  .homeView .homeBody{
+    grid-template-columns: 1fr;
+  }
+  .homeView .pullRail{
+    position: static;
+    order: -1; /* rail back on top, like before */
+    margin-bottom: 0;
+  }
+  .homeView .pullRailLanes{
+    display:grid;
+    /* auto-fit reacts to the lanes' ACTUAL width (already minus the sidebar),
+       not the viewport, so they step 3 → 2 → 1 columns based on real space.
+       min(100%, 260px) keeps each lane wide enough to show sender/subject,
+       but lets it shrink below 260 only when the container itself is that
+       narrow — so a lane never overflows or clips its content. */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap:10px;
+  }
+}
+
+/* Domain shelf — clean transparent section. Header sits on top, cards
+   below in a 2-column grid. iOS-Settings style: white rounded cards with
+   a separate rounded-square icon tile on the left. */
+.homeView .domainShelf{
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: visible;
+}
+
+.homeView .domainHeader{
+  padding: 0 2px 2px;
+  background: transparent;
+  display: flex;
+  align-items: baseline;
+}
+.homeView .domainLabel{
+  font-family:"Fraunces", Georgia, serif;
+  font-size:15px;
+  font-weight:500;
+  color: var(--d-ink, var(--text));
+  letter-spacing:-0.01em;
+  line-height:1;
+  margin:0;
+}
+
+/* per-domain palette plumbing */
+.homeView .domainShelf[data-domain="work"]   { --d-ink:var(--d-work-ink);   --d-accent:var(--d-work-accent);   --d-tint:var(--d-work-tint);   --d-glow:var(--d-work-glow);   }
+.homeView .domainShelf[data-domain="self"]   { --d-ink:var(--d-self-ink);   --d-accent:var(--d-self-accent);   --d-tint:var(--d-self-tint);   --d-glow:var(--d-self-glow);   }
+.homeView .domainShelf[data-domain="media"]  { --d-ink:var(--d-media-ink);  --d-accent:var(--d-media-accent);  --d-tint:var(--d-media-tint);  --d-glow:var(--d-media-glow);  }
+.homeView .domainShelf[data-domain="home"]   { --d-ink:var(--d-home-ink);   --d-accent:var(--d-home-accent);   --d-tint:var(--d-home-tint);   --d-glow:var(--d-home-glow);   }
+.homeView .domainShelf[data-domain="people"] { --d-ink:var(--d-people-ink); --d-accent:var(--d-people-accent); --d-tint:var(--d-people-tint); --d-glow:var(--d-people-glow); }
+.homeView .domainShelf[data-domain="places"] { --d-ink:var(--d-places-ink); --d-accent:var(--d-places-accent); --d-tint:var(--d-places-tint); --d-glow:var(--d-places-glow); }
+
+/* App tiles — fixed 3-column grid so busy rooms wrap to a second line
+   (Work's 6 apps → 3+3, Media's 6 → 3+3) instead of doing an unbalanced
+   5+1. Short rooms (1-2 apps) leave the trailing columns empty rather
+   than stretching the tile across the row. */
+.homeView .domainApps{
+  padding: 6px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.homeView .domainApps .appPill{ min-width: 0; }
+@media (max-width: 880px){
+  .homeView .domainApps{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 540px){
+  .homeView .domainApps{ grid-template-columns: 1fr; }
+}
+
+/* App picker card — iOS-Settings-style: rounded square icon tile on the
+   left, app name + muted status subtitle on the right. The card itself is
+   white with a hairline border so it reads cleanly against the home wash.
+   The user supplies real PNGs in `app-icons/<id>.png`; the fallback SVG/
+   letter glyph keeps unstyled apps from looking empty. */
+.homeView .appPill{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Padding compensates for the 2px hover border below — keeps the card
+     contents from shifting 1px when the stroke thickens on hover. */
+  padding: 9px 11px;
+  background: var(--paper);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  min-height: 60px;
+  font-family: inherit;
+  color: inherit;
+  transition: background .12s, border-color .12s, border-width .12s, padding .12s, transform .12s, box-shadow .12s;
+}
+.homeView .appPill:hover{
+  background: var(--paper);
+  /* Hover stroke uses the per-app accent first, then the domain shelf's,
+     then a soft fallback. The 2px width is balanced by the matching
+     padding shift below so contents don't jitter. */
+  border: 2px solid var(--app-accent-color, var(--d-accent, var(--rule)));
+  padding: 8px 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.homeView .appPill:active{
+  transform: translateY(1px);
+}
+
+/* Icon tile — square, sized to fill the pill's full height (56px+) and
+   flush against the pill's left edge. Holds the user's PNG (.appPillImg)
+   on top of a fallback glyph. The fallback fills the tile with a soft
+   tint so empty / loading states still read as "an app icon". The pill
+   itself uses `overflow: hidden` + `border-radius: 12px` to clip the
+   icon's left corners so they curve with the pill outline. */
+.homeView .appPill .appPillIcon{
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  /* The constellation SVG carries its own cream paper background, so the
+     wrapper is transparent — no double-tile look. */
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.homeView .appPill .appPillIcon svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.homeView .appPill .appPillIcon{
+  transition: filter .18s ease, opacity .18s ease;
+}
+.homeView .appPill .appPillFallback{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--d-accent, var(--muted));
+  opacity: 0.9;
+}
+.homeView .appPill .appPillFallback .iconLetter{
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--d-accent, var(--text));
+}
+
+/* Body — name on top (dark), status subtitle underneath (muted gray).
+   Padding here replaces what used to live on the pill itself (the pill
+   now has padding:0 so the icon can sit flush). Right-side 12px keeps
+   the text from crashing into the pill's rounded right edge. */
+.homeView .appPill .appPillBody{
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 12px 6px 0;
+}
+.homeView .appPill .appPillName{
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.homeView .appPill .appPillStatus{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted, #94a3b8);
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.homeView .appPill .appPillStatusText{
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.homeView .appPill .homeCardDot{
+  width: 6px;
+  height: 6px;
+  border-radius: 6px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.homeView .appPill .homeCardStatus.running .homeCardDot{
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+}
+.homeView .appPill .homeCardStatus.stopped .homeCardDot{ background:#cbd5e1; }
+.homeView .appPill .homeCardStatus.probing .homeCardDot{
+  background: #cbd5e1;
+  animation: probePulse 1.6s ease-in-out infinite;
+}
+@keyframes probePulse{
+  0%,100% { opacity: 0.5; }
+  50%     { opacity: 1; }
+}
+
+/* Per-app notification badge — sits in the top-right of the icon tile,
+   iOS-style. Hidden at 0 (not rendered) so quiet apps stay quiet. */
+.homeView .appPill .appPillBadge{
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ef4444;
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #fff;
+  z-index: 2;
+}
+
+/* ----- Recents strip --------------------------------------------------- */
+/* Quick-access row of the last N opened apps, persisted via localStorage.
+   Sits above the domain shelves so frequently-opened apps are one click
+   from the top. Hidden entirely when the recents list is empty so a
+   fresh install doesn't show a meaningless empty bar. */
+.homeView .recentsStrip{
+  margin-bottom: 22px;
+}
+.homeView .recentsHeader{
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--soft-border);
+  display: flex;
+  align-items: baseline;
+}
+.homeView .recentsLabel{
+  font-family:"Fraunces", Georgia, serif;
+  font-size:18px;
+  font-weight:500;
+  color: var(--text);
+  letter-spacing:-0.01em;
+  line-height:1;
+  margin:0;
+}
+.homeView .recentsRow{
+  padding: 10px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.homeView .recentsItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  transition: background .12s, border-color .12s, transform .12s;
+}
+.homeView .recentsItem:hover{
+  background: rgba(0,0,0,0.03);
+  border-color: rgba(0,0,0,0.12);
+}
+.homeView .recentsItem:active{
+  transform: translateY(1px);
+}
+.homeView .recentsItemIcon{
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.homeView .recentsItemName{
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.homeView .recentsItem .homeCardStatus{
+  display: inline-flex;
+  align-items: center;
+}
+.homeView .recentsItem .homeCardStatus span:not(.homeCardDot){ display:none; }
+.homeView .recentsItem .homeCardDot{
+  width: 5px; height: 5px; border-radius: 5px;
+  background: #cbd5e1;
+  display: inline-block;
+}
+.homeView .recentsItem .homeCardStatus.running .homeCardDot{
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+}
+
+/* ----- Tools strip ----------------------------------------------------- */
+.homeView .toolsStrip{
+  margin-top:18px;
+  padding:10px 16px;
+  background:#f1f1f5;
+  border:1px solid var(--soft-border);
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  font-family:"JetBrains Mono", monospace;
+  font-size:11px;
+  color:#7070a0;
+  flex-wrap:wrap;
+}
+.homeView .toolsLabel{
+  font-weight:600;
+  color:var(--text);
+  text-transform:uppercase;
+  letter-spacing:0.1em;
+  font-size:10px;
+}
+.homeView .toolsItem{
+  background:transparent;
+  border:none;
+  font:inherit;
+  color:inherit;
+  cursor:pointer;
+  padding:2px 4px;
+  border-radius:3px;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.homeView .toolsItem:hover{
+  color:var(--text);
+  background: rgba(0,0,0,0.04);
+}
+.homeView .toolsItem .homeCardStatus{ display:inline-flex; }
+.homeView .toolsItem .homeCardStatus span:not(.homeCardDot){ display:none; }
+.homeView .toolsItem .homeCardDot{
+  width:5px; height:5px; border-radius:5px;
+  background:#cbd5e1;
+}
+.homeView .toolsItem .homeCardStatus.running .homeCardDot{
+  background:#22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+}
+/* (toolsHint removed — the kill-server hint now lives in each pill's
+   title attribute instead of a separate footer.) */
+
+/* hide the legacy compatibility shells that updateStatusStrip writes to */
+.homeView .hiddenStatus{ display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ROOM VIEW — 3D dollhouse home, rendered by room.js
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Body row that holds the room frame and the rail panel side by side */
+.mainBody {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The room sits inside this framed container — gives it a sense of place
+   instead of feeling like it's floating against the app chrome. */
+.roomContainer {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  margin: 16px 8px 16px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  background: linear-gradient(180deg, #2a2536 0%, #1a1722 100%);
+  box-shadow:
+    0 12px 36px rgba(15, 23, 42, 0.12),
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+.roomContainer[hidden] { display: none; }
+
+.miseRoomCanvas {
+  display: block;
+  /* Three.js sets explicit width/height in pixels via setSize(w, h, true).
+     We just enforce display:block (so it's not weird inline-block) and clamp
+     against accidental overflow during layout transitions. */
+  max-width: 100%;
+  max-height: 100%;
+  cursor: default;
+}
+
+/* When in roomMode, .hint is the right-side rail panel (sibling of the room,
+   not an overlay on top of it). */
+.hint.roomMode {
+  flex: 0 0 340px;
+  max-width: 38vw;
+  position: static;
+  inset: auto;
+  padding: 16px 16px 16px 8px;
+  background: transparent;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  z-index: auto;
+}
+
+/* The pull rail fills the side panel */
+.hint.roomMode .pullRail {
+  position: relative !important;
+  top: auto; right: auto; bottom: auto; left: auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  align-self: stretch;
+  flex: 1;
+  pointer-events: auto;
+  /* slightly more shadow against the framed room */
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.10),
+    0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+/* Top-bar buttons (Search / Reset / Edit) */
+.miseRoomTopBar {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  display: flex;
+  gap: 8px;
+  z-index: 6;
+}
+.miseRoomBtn {
+  background: rgba(20, 18, 28, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #f5f1e9;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 9px 13px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 120ms ease, background 160ms ease;
+}
+.miseRoomBtn:hover { background: rgba(40, 36, 50, 0.9); transform: translateY(-1px); }
+.miseRoomBtn.primary { background: #c9a467; color: #1a1722; border-color: rgba(0,0,0,0.1); }
+.miseRoomBtn.primary:hover { background: #e8b94a; }
+.miseRoomBtn.primary.active { background: #e8b94a; }
+.miseRoomBtn.ghost { color: rgba(245,241,233,0.7); }
+.miseRoomBtn.ghost:hover { color: #f5f1e9; }
+.miseRoomBtn[hidden] { display: none; }
+
+/* Floating tooltip that follows the cursor over hovered furniture */
+.miseRoomTooltip {
+  position: fixed;
+  padding: 8px 12px;
+  background: rgba(15, 13, 22, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #f5f1e9;
+  pointer-events: none;
+  z-index: 20;
+  transform: translate(12px, -50%);
+  opacity: 0;
+  transition: opacity 100ms ease;
+  white-space: nowrap;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+}
+.miseRoomTooltip.show { opacity: 1; }
+.miseRoomTooltip .room {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(245,241,233,0.6);
+  margin-top: 2px;
+  text-transform: capitalize;
+}
+
+/* Bottom-left help legend */
+.miseRoomLegend {
+  position: absolute;
+  bottom: 18px;
+  left: 22px;
+  background: rgba(20, 18, 28, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: rgba(245,241,233,0.6);
+  z-index: 6;
+}
+.miseRoomLegend kbd {
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  color: #f5f1e9;
+}
+
+/* Edit-mode banner at the bottom-center */
+.miseRoomEditBanner {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 18, 28, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 9px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: #f5f1e9;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  z-index: 6;
+}
+.miseRoomEditBanner.show { display: flex; }
+.miseRoomEditBanner .miseRoomEditHint { color: rgba(245,241,233,0.6); display: inline; }
+.miseRoomEditBanner kbd {
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", monospace;
+}
+
+/* Cmd+K search overlay — fixed-positioned modal */
+.miseRoomSearchOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  z-index: 200;
+}
+.miseRoomSearchOverlay.show { display: flex; }
+.miseRoomSearchModal {
+  width: 520px;
+  max-width: 92vw;
+  background: #1f1b2a;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.5);
+  overflow: hidden;
+  color: #f5f1e9;
+}
+.miseRoomSearchInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #f5f1e9;
+  font: inherit;
+  font-size: 17px;
+  padding: 18px 20px;
+  outline: none;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.miseRoomSearchInput::placeholder { color: rgba(245,241,233,0.35); }
+.miseRoomSearchResults {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.miseRoomSearchResults:empty::after {
+  content: "No matches";
+  display: block;
+  padding: 18px 20px;
+  color: rgba(245,241,233,0.5);
+  font-size: 13px;
+}
+.miseRoomSearchItem {
+  padding: 11px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.miseRoomSearchItem.selected { background: rgba(201,164,103,0.15); }
+.miseRoomSearchItem:hover { background: rgba(255,255,255,0.04); }
+.miseRoomSearchItem .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.miseRoomSearchItem .room {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(245,241,233,0.5);
+  text-transform: capitalize;
+}
+.miseRoomSearchFoot {
+  padding: 8px 16px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: rgba(245,241,233,0.5);
+  font-size: 11px;
+  display: flex;
+  gap: 14px;
+}
+.miseRoomSearchFoot kbd {
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  color: #f5f1e9;
+}
+
+/* Screenshot of the loaded app, shown UNDER the white veil during the
+   launch transition's reveal phase. As the veil fades to opacity 0 the
+   screenshot is revealed — visually identical to "the loaded app fading
+   in". Then the actual WebContentsView mounts on top and we hide this. */
+.miseRoomLaunchPreview {
+  position: fixed;
+  top: var(--header-h);
+  left: var(--sidebar-w);
+  right: 0;
+  bottom: 0;
+  background-color: #ffffff;
+  background-size: cover;
+  background-position: top left;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 9998;   /* below the veil (9999), below appHeader (10000) */
+}
+.miseRoomLaunchPreview[hidden] { display: none; }
+
+/* White veil for the launch transition. Covers the main area only — the
+   sidebar stays visible the whole time so the user never loses their bearings.
+   Sits below the WebContentsView (native layer always on top of renderer DOM),
+   so the user only sees it during the zoom-in and on the way back home. */
+.miseRoomTransitionVeil {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-w);
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 9999;
+  transform-origin: center center;
+  will-change: opacity, transform, filter;
+}
+
+/* When the user returns home, the veil "lifts" — it fades out while subtly
+   scaling up and softening, so the room appears to be revealed through a slow
+   pull-back rather than just a flat opacity dissolve. */
+@keyframes miseRoomVeilLift {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  60% {
+    opacity: 0.55;
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.04);
+    filter: blur(0px);
+  }
+}
+.miseRoomTransitionVeil.veilFadingOut {
+  animation: miseRoomVeilLift 750ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+/* ============================================================================
+   Onboarding wizard
+   ============================================================================ */
+
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(20, 18, 14, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: obFadeIn 220ms ease;
+}
+.onboarding[hidden] { display: none; }
+
+@keyframes obFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ob-card {
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 40px 44px 32px;
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+  position: relative;
+}
+
+.ob-step { animation: obStepIn 180ms ease; }
+@keyframes obStepIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ob-logo-wrap { text-align: center; margin-bottom: 20px; }
+.ob-logo { width: 56px; height: 56px; }
+
+.ob-icons {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: 32px;
+  margin-bottom: 20px;
+}
+
+.ob-check {
+  text-align: center;
+  font-size: 44px;
+  color: var(--accent);
+  margin-bottom: 16px;
+  font-weight: 300;
+}
+
+/* Step 3 folder picker */
+.ob-folder-icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.ob-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--paper-deep);
+  border: 1px solid var(--rule-mid, var(--rule));
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 14px 0 8px;
+}
+.ob-folder-path {
+  flex: 1;
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ob-btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ob-code {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ob-code-comment { color: var(--ink-mute); }
+.ob-code-cmd     { color: var(--accent); font-weight: 500; }
+
+.ob-title {
+  font-family: 'Fraunces', serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin: 0 0 10px;
+  line-height: 1.25;
+}
+
+.ob-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 10px;
+}
+.ob-body--muted { color: var(--ink-mute); font-size: 13px; }
+.ob-inline-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--paper-deep);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.ob-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.ob-btn {
+  padding: 8px 18px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.12s;
+}
+.ob-btn:hover { opacity: 0.82; }
+.ob-btn--primary { background: var(--accent); color: #fff; }
+.ob-btn--ghost   { background: transparent; color: var(--ink-soft); border: 1px solid var(--rule); }
+
+.ob-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 28px;
+}
+.ob-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--rule);
+  transition: background 0.2s;
+}
+.ob-dot--active { background: var(--accent); }
+
+/* ============================================================================
+   Tooltip tour
+   ============================================================================ */
+
+.tourOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  pointer-events: none;
+}
+.tourOverlay[hidden] { display: none; }
+
+.tourSpotlight {
+  position: absolute;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(20,18,14,0.55);
+  transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.tourTooltip {
+  position: absolute;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 14px 16px;
+  width: 260px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  pointer-events: all;
+  transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tourText {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+}
+
+.tourFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tourCounter {
+  font-size: 11px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.tourBtns { display: flex; gap: 6px; }
+
+/* Help button added to sidebar footer by renderer.js */
+.helpBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 6px 8px 0;
+  font-size: 11px;
+  color: var(--sidebar-mute, rgba(255,255,255,0.35));
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  width: calc(100% - 16px);
+  transition: color 0.15s, background 0.15s;
+}
+.helpBtn:hover {
+  color: var(--sidebar-fg, rgba(255,255,255,0.75));
+  background: rgba(255,255,255,0.06);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   In-app "Desktop" entry pill (home view) + desktop room-only view
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Pill that drops Misen onto the desktop. Lives at the bottom of the left
+   app-list column on the home view. Hidden when an app is open or once we're
+   already in desktop mode (the hotkeys take over from there). */
+.desktopModeBtn {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 9998;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: background .14s, border-color .14s, box-shadow .14s, transform .14s;
+}
+.desktopModeBtn:hover {
+  background: var(--paper-warm);
+  border-color: color-mix(in srgb, var(--misen-accent) 35%, var(--rule));
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+}
+.desktopModeBtn:active { transform: translateY(1px); }
+.desktopModeBtnIcon { font-size: 13px; line-height: 1; }
+body:has(#appHeader:not([hidden])) .desktopModeBtn,
+body.desktop-mode .desktopModeBtn { display: none; }
+
+/* Room-only view: hide the app list + rail so only the diorama shows, and let
+   the room fill the window edge-to-edge. Toggled by Ctrl+Opt+Cmd+R; default ON
+   in wallpaper (layer) mode. */
+body.desktop-roomonly .dior-applist,
+body.desktop-roomonly .pullRail,
+body.desktop-roomonly .hint { display: none !important; }
+body.desktop-roomonly .roomContainer {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
