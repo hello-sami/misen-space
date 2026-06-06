@@ -7,7 +7,9 @@
  * The username is ignored — visitors can type anything for the username and
  * the shared password to get in.
  *
- * Fails closed: if DEMO_PASSWORD is not configured, nobody gets in.
+ * Open by default: if DEMO_PASSWORD is not configured, the demo is public.
+ * Set the secret to instantly switch on the Basic Auth gate (no redeploy of
+ * source needed).
  */
 
 const REALM = 'Misen demo';
@@ -37,13 +39,11 @@ export const onRequest = async (context) => {
   const { request, env, next } = context;
   const expected = env.DEMO_PASSWORD;
 
-  // Misconfiguration → fail closed rather than serving the demo unprotected.
+  // No password configured → demo is OPEN. To lock it down later, just add a
+  // `DEMO_PASSWORD` secret in the Pages project settings (no code change /
+  // redeploy of source needed) and the Basic Auth gate below activates.
   if (!expected) {
-    return new Response(
-      'Demo is not configured yet (missing DEMO_PASSWORD). Set it in the ' +
-      'Cloudflare Pages project settings and redeploy.',
-      { status: 503, headers: { 'Cache-Control': 'no-store' } }
-    );
+    return next();
   }
 
   const header = request.headers.get('Authorization') || '';
