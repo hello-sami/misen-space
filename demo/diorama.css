@@ -231,6 +231,44 @@
   box-shadow: none;
 }
 
+/* Wall paint popup — same speech-bubble chrome, with a grid of preset
+   color swatches plus a native color input for custom colors. */
+.dior-wallmenu .dior-modal { width: 196px; }
+.dior-wall-swatches {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 6px; margin: 4px 0 10px;
+}
+.dior-wall-swatch {
+  width: 100%; aspect-ratio: 1 / 1;
+  border: 1px solid rgba(58, 47, 36, 0.18);
+  border-radius: 7px; padding: 0; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+  transition: transform 100ms ease, box-shadow 120ms ease;
+}
+.dior-wall-swatch:hover { transform: translateY(-1px); }
+.dior-wall-swatch.active {
+  box-shadow: 0 0 0 2px #fbf5e9, 0 0 0 4px #c98a7b;
+}
+.dior-wall-custom {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; border-top: 1px solid #ece0c6; padding-top: 9px;
+}
+.dior-wall-custom-label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #6a553a; cursor: pointer;
+}
+.dior-wall-color-input {
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid #d8c89e; border-radius: 6px;
+  background: none; cursor: pointer;
+}
+.dior-wall-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.dior-wall-color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+.dior-wall-reset {
+  padding: 5px 10px; font-size: 11px; border-radius: 7px;
+  box-shadow: none;
+}
+
 /* ── Side app list + connector line ──────────────────────────────
    A plaintext index of every launcher, in its OWN column to the
    LEFT of the diorama frame (it's a flex child of .mainBody, so it

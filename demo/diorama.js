@@ -205,6 +205,8 @@
   let modalOpen = false;
   let winMenuEl = null;      // window popup — Blinds / Change scene
   let winMenuOpen = false;
+  let wallMenuEl = null;     // wall popup — paint color picker
+  let wallMenuOpen = false;
   // Wall meshes — geometry is rebuilt with real rectangular holes
   // (ShapeGeometry) for each window placement. See rebuildWallGeometry()
   // and glbWindow's `cutsThroughWall` flag. _rightWallMesh exists so
@@ -381,6 +383,41 @@
   const STORAGE_KEY = 'misen.dioramaLayout';
   const CURRENT_SCHEMA = 15;
   const LEGACY_STORAGE_KEYS = ['misen.dioramaLayout.v8'];
+
+  // Wall paint color — clicking any wall opens a color picker that
+  // repaints all three walls together (they share one material). The
+  // chosen hex is persisted separately from the layout so it survives
+  // reloads. DEFAULT_WALL_COLOR mirrors the wallMat hex set in setupRoom;
+  // keep the two in sync if the factory default ever changes.
+  const WALL_COLOR_KEY = 'misen.dioramaWallColor.v1';
+  const DEFAULT_WALL_COLOR = '#1c2b22';
+  // Curated presets for the picker. Default first so "Reset" reads as
+  // "back to the deep sage." Warm gallery off-white, sage, clay, slate,
+  // blush, and ink give a spread of light/dark and warm/cool.
+  const WALL_COLOR_PRESETS = [
+    { hex: '#1c2b22', name: 'Deep sage (default)' },
+    { hex: '#e0d8c4', name: 'Warm off-white' },
+    { hex: '#8a9a82', name: 'Sage' },
+    { hex: '#b08868', name: 'Clay' },
+    { hex: '#5a6472', name: 'Slate' },
+    { hex: '#d9b5a8', name: 'Blush' },
+    { hex: '#2a2620', name: 'Ink' },
+  ];
+  function loadWallColor() {
+    try {
+      const v = localStorage.getItem(WALL_COLOR_KEY);
+      if (v && /^#[0-9a-fA-F]{6}$/.test(v)) return v;
+    } catch (e) {}
+    return DEFAULT_WALL_COLOR;
+  }
+  function saveWallColor(hex) {
+    try { localStorage.setItem(WALL_COLOR_KEY, hex); } catch (e) {}
+  }
+  // Repaint all walls live. wallMat is shared across back/left/right, so
+  // a single color set updates every wall in one frame.
+  function applyWallColor(hex) {
+    if (_lights.wallMat) _lights.wallMat.color.set(hex);
+  }
 
   // Camera debug mode — press `C` in the running diorama to enter a
   // free-camera editing mode. Drag orbits the camera around the current
@@ -2657,6 +2694,10 @@
       roughnessMap: _stuccoTex('textures/wall-stucco.rough.png', 3.8, 2.1),
     });
     _lights.wallMat = wallMat;
+    // Restore any user-chosen wall paint (click-a-wall color picker).
+    // Done here so it overrides the factory hex the moment the material
+    // exists, before the first render.
+    applyWallColor(loadWallColor());
 
     // Walls are built as ShapeGeometry — a rectangle with rectangular
     // holes punched out for each window. Real geometry holes (vs the
@@ -4244,6 +4285,54 @@
       if (e.target === winMenuEl) closeWindowMenu();
     });
 
+    // Wall popup — opened by clicking any wall. A row of preset swatches
+    // plus a native color input to pick any custom color; both repaint
+    // all three walls live and persist the choice. Reuses the
+    // speech-bubble chrome via .dior-wallmenu.
+    wallMenuEl = document.createElement('div');
+    wallMenuEl.className = 'dior-modal-bg dior-wallmenu';
+    const _swatchHtml = WALL_COLOR_PRESETS.map((p) =>
+      `<button class="dior-wall-swatch" type="button" data-hex="${p.hex}" ` +
+      `title="${escapeHtml(p.name)}" aria-label="${escapeHtml(p.name)}" ` +
+      `style="background:${p.hex}"></button>`
+    ).join('');
+    wallMenuEl.innerHTML = `
+      <div class="dior-modal" role="dialog" aria-modal="true">
+        <button class="dior-modal-close" type="button" aria-label="Close">×</button>
+        <h2 class="dior-modal-title">Wall color</h2>
+        <p class="dior-modal-sub">Pick a paint</p>
+        <div class="dior-wall-swatches">${_swatchHtml}</div>
+        <div class="dior-wall-custom">
+          <label class="dior-wall-custom-label">
+            <input class="dior-wall-color-input" type="color" value="${DEFAULT_WALL_COLOR}">
+            <span>Custom…</span>
+          </label>
+          <button class="dior-btn dior-wall-reset" type="button">Reset</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(wallMenuEl);
+    const _colorInput = wallMenuEl.querySelector('.dior-wall-color-input');
+    // Live-paint helper: applies + persists + reflects the active swatch.
+    const _setWall = (hex) => {
+      applyWallColor(hex);
+      saveWallColor(hex);
+      if (_colorInput) _colorInput.value = hex;
+      wallMenuEl.querySelectorAll('.dior-wall-swatch').forEach((b) => {
+        b.classList.toggle('active', b.dataset.hex.toLowerCase() === hex.toLowerCase());
+      });
+    };
+    wallMenuEl.querySelector('.dior-modal-close').addEventListener('click', closeWallMenu);
+    wallMenuEl.querySelectorAll('.dior-wall-swatch').forEach((b) => {
+      b.addEventListener('click', () => _setWall(b.dataset.hex));
+    });
+    if (_colorInput) _colorInput.addEventListener('input', () => _setWall(_colorInput.value));
+    wallMenuEl.querySelector('.dior-wall-reset').addEventListener('click', () => _setWall(DEFAULT_WALL_COLOR));
+    wallMenuEl.addEventListener('click', (e) => {
+      if (e.target === wallMenuEl) closeWallMenu();
+    });
+    wallMenuEl._setWall = _setWall;
+
     // pointer events on canvas
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerleave', () => {
@@ -4291,7 +4380,8 @@
         return; // suppress any other shortcut while debugging
       }
       if (e.key === 'Escape') {
-        if (winMenuOpen) closeWindowMenu();
+        if (wallMenuOpen) closeWallMenu();
+        else if (winMenuOpen) closeWindowMenu();
         else if (modalOpen) closeModal();
         else if (state.heldPiece) cancelHeld();
         else if (state.armedItem) cancelArmedOrMove();
@@ -5138,16 +5228,42 @@
     winMenuOpen = false;
   }
 
+  // Open the wall color picker, anchored to the clicked point on the
+  // wall (a world-space Vector3 from the wall raycast hit). Syncs the
+  // swatch highlight + custom input to the current paint first.
+  function openWallMenu(worldPoint) {
+    if (!wallMenuEl) return;
+    const cur = loadWallColor();
+    if (wallMenuEl._setWall) {
+      // Reflect current color without re-persisting (value is already saved).
+      const input = wallMenuEl.querySelector('.dior-wall-color-input');
+      if (input) input.value = cur;
+      wallMenuEl.querySelectorAll('.dior-wall-swatch').forEach((b) => {
+        b.classList.toggle('active', b.dataset.hex.toLowerCase() === cur.toLowerCase());
+      });
+    }
+    wallMenuEl.classList.add('show');
+    wallMenuOpen = true;
+    appHoverEl.classList.remove('show');
+    positionWinMenuAt(worldPoint, wallMenuEl);
+  }
+
+  function closeWallMenu() {
+    if (!wallMenuEl) return;
+    wallMenuEl.classList.remove('show');
+    wallMenuOpen = false;
+  }
+
   // Anchor the popup's speech bubble above a world-space point, with the
   // same clamping/flip logic as positionModalForPlacement.
-  function positionWinMenuAt(worldPoint) {
+  function positionWinMenuAt(worldPoint, menuEl = winMenuEl) {
     const v = worldPoint.clone().project(camera);
     const rect = renderer.domElement.getBoundingClientRect();
     const cRect = container.getBoundingClientRect();
     const px = (v.x * 0.5 + 0.5) * rect.width  + (rect.left - cRect.left);
     const py = (-v.y * 0.5 + 0.5) * rect.height + (rect.top  - cRect.top);
 
-    const card = winMenuEl.querySelector('.dior-modal');
+    const card = menuEl.querySelector('.dior-modal');
     card.style.left = '0px'; card.style.top = '0px';
     card.style.visibility = 'hidden';
     card.classList.remove('below');
@@ -6280,7 +6396,7 @@
       e.preventDefault();
       return;
     }
-    if (modalOpen || winMenuOpen) return;  // popup backdrop captures these; canvas is dormant
+    if (modalOpen || winMenuOpen || wallMenuOpen) return;  // popup backdrop captures these; canvas is dormant
     getPointerNDC(e);
     raycaster.setFromCamera(mouse, camera);
 
@@ -6399,6 +6515,37 @@
       if (blindHits.length) {
         openWindowMenu(blindHits[0].point);
         return;
+      }
+    }
+
+    // Click a bare wall to open the paint color picker. Tested AFTER the
+    // placed-piece hit test below would otherwise win... but we want a
+    // click on empty wall (not on a poster/shelf) to paint, so we check
+    // the walls only if no placed piece is under the cursor. Do the piece
+    // hit-test first, then fall back to walls.
+    {
+      const pieceHits = raycaster.intersectObjects(getPlacedTargets(), true);
+      let pieceUnderCursor = false;
+      for (const h of pieceHits) {
+        const o = findPlacedAncestor(h.object);
+        if (o && o.userData.placementId) {
+          const placement = state.placements.find(p => p.placementId === o.userData.placementId);
+          if (placement) {
+            state.dragCandidate = { startX: e.clientX, startY: e.clientY, placement };
+            pieceUnderCursor = true;
+            break;
+          }
+        }
+      }
+      if (pieceUnderCursor) return;
+
+      const wallMeshes = [_backWallMesh, _leftWallMesh, _rightWallMesh].filter(Boolean);
+      if (wallMeshes.length) {
+        const wallHits = raycaster.intersectObjects(wallMeshes, false);
+        if (wallHits.length) {
+          openWallMenu(wallHits[0].point);
+          return;
+        }
       }
     }
 
