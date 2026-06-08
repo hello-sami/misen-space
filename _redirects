@@ -1,0 +1,5 @@
+# Redirect the marketing landing page to samismith.com (temporary / 302 so it's
+# reversible — see CLAUDE.md). Only the exact root and /index.html are matched,
+# so /demo/* and static assets continue to serve normally.
+/            https://samismith.com/  302
+/index.html  https://samismith.com/  302
