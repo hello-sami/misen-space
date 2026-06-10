@@ -76,6 +76,9 @@
   // §3 · Module state
   // ══════════════════════════════════════════════════════════════════
   let initialized = false;
+  // Synchronous re-entrancy latch for init() — `initialized` itself only
+  // flips inside the async GLB preload callback. See init().
+  let _initStarted = false;
   let container = null;
   let canvas = null;
   let renderer = null;
@@ -89,20 +92,18 @@
   // applyResponsiveFov(). Narrower-than-design windows widen the FOV
   // ("fit: contain") so the gallery's outer columns never crop; wider
   // windows keep BASE_FOV exactly, preserving the telephoto look.
-  // 72° FOV — a moderate wide angle that frames the home-studio room
-  // naturally without the fish-eye distortion of the earlier 120°
-  // pass. Side walls (incl. the right wall window) still wrap into
-  // the edges from the front-of-room camera position. Tune in the
-  // in-app camera debugger (press `C`).
+  // 52° FOV — a gentle telephoto that frames the home-studio room
+  // naturally (earlier passes used 72° and 120°, which read as fish-eye).
+  // Side walls (incl. the right wall window) still wrap into the edges
+  // from the front-of-room camera position. Tune in the in-app camera
+  // debugger (press `C`).
   const BASE_FOV = 52.0;
   const DESIGN_ASPECT = 1.5;   // tune by eye; at/above this, FOV stays at base
   const MAX_FOV = 60.0;        // ceiling so ultra-narrow windows don't zoom to nothing
   let baseFov = BASE_FOV;
   // (All post-processing removed — scene renders direct-to-canvas via
-  // renderer.render. composer/ssaoPass kept as nulls for any code paths
-  // that still check them defensively.)
-  let composer = null;
-  let ssaoPass = null;
+  // renderer.render. The composer/ssaoPass nulls and their debugger
+  // branches went with it.)
   let _envMap = null;
 
   // Light + material refs captured during scene setup so the lighting
@@ -128,13 +129,6 @@
   const state = {
     armedItem: null,
     slotMarkers: [],
-    hoverMarker: null,
-    // Per-frame set of markers currently visible (opacity > 0). Avoids
-    // walking the full slotMarkers array each pointermove just to zero
-    // the opacity of inactive ones — with 200+ markers in the fine
-    // grid, that work shows up as drag jank. Resetting only this small
-    // set (typically 0-2 items) keeps pointermove cheap.
-    activeMarkers: [],
     // The top-level placed mesh currently under the cursor (or null).
     // Mutate via setHoveredMesh() — kept as a setter for symmetry with
     // the other hover-related state changes.
@@ -147,17 +141,8 @@
     // setLinkedApp() / updateConnector() / rebuildAppList() in §14.
     linkedAppId: null,
     placements: [],   // { placementId, itemId, surface, slot, appId? }
-    // When set, the user is in single-piece move mode triggered from the
-    // app modal's "Move" button. The piece has been temporarily removed
-    // from the scene; if the user cancels (Esc / click-outside), we
-    // restore it to its original slot. If they click a valid slot, we
-    // re-place there with the same appId.
-    movingPiece: null,  // { itemId, surface, slot, appId }
-    // When the user arms an item from the catalog and that item is bound
-    // to an app launcher (e.g. glbLaptop → job-search), this holds the
-    // appId the upcoming placement should claim. Cleared on commit /
-    // cancel via disarm(). Decorative arms leave this null.
-    armedAppId: null,
+    // (movingPiece and armedAppId were removed with the old click-to-place
+    // "armed move" / catalog flows — every move now rides heldPiece.)
     // Drag-to-move (sticky-grab) state. Mousedown on a placed piece sets
     // dragCandidate; if the cursor moves > DRAG_THRESHOLD_PX before
     // pointerup, the candidate is promoted to heldPiece and follows the
@@ -165,20 +150,17 @@
     // canvas drops the held piece at lastValidSlot. If pointerup happens
     // before the threshold, it's a plain click — the launch modal opens.
     dragCandidate: null, // { startX, startY, placement }
-    // heldPiece: the piece currently following the cursor. Three entry
+    // heldPiece: the piece currently following the cursor. Two entry
     // points spawn into held mode:
     //   1. drag-pickup of an existing placement (pickUpHeld)
     //   2. modal Move → pickUpHeld of the clicked placement
-    //   3. catalog Add → spawnHeldFromCatalog (isNew: true)
-    // For (1) and (2), originalSurface/originalSlot point at where the
-    // piece came from, so cancelHeld can restore it. For (3) there's no
-    // origin — isNew = true and drop pushes a 'place' command instead of
-    // 'move'; cancel/remove just discard.
+    // originalSurface/originalSlot point at where the piece came from, so
+    // cancelHeld can restore it.
     //
     // mesh.position.x/z are written directly by onPointerMove as the
     // cursor moves. targetY carries the Y so the animation loop can
     // layer a bob on top without losing the resting height.
-    heldPiece: null,     // { def, mesh, isNew?, originalSurface?, originalSlot?,
+    heldPiece: null,     // { def, mesh, originalSurface, originalSlot,
                          //   originalRotation, currentRotation, appId,
                          //   lastValidSurface, lastValidSlot, targetY,
                          //   pickedUpTrinkets }
@@ -187,6 +169,10 @@
   // Cursor-pixel distance before a mousedown-on-piece turns into a drag
   // (anything below this is treated as a click → launch modal).
   const DRAG_THRESHOLD_PX = 6;
+  // Scratch vector for the held-piece snap target — pointermove fires at
+  // pointer rate, so avoid allocating a Vector3 per event. Lazily created
+  // so module load keeps zero THREE references (init() guards for THREE).
+  let _snapWP = null;
   // World-units the held piece floats above its snap target.
   const HELD_LIFT = 0.18;
   // Held tilt — was previously a small "lifted" rotation applied to
@@ -250,13 +236,12 @@
   let _lastCursorPx = null;   // {x,y} canvas-relative, for per-frame re-aim
   // Small lead-in before the glow starts ramping, so brushing across items
   // doesn't flash. Kept in sync with the CSS transition-delay on the row
-  // highlight + connector line (HOVER_DELAY_MS below). Seconds.
+  // highlight + connector line (GLOW_DELAY below). Seconds.
   let _glowDelay = 0;
   const GLOW_DELAY = 0.05;
 
   let resizeObserver = null;
   let animFrame = null;
-  let pendingDefaults = false;
   // Shadow maps are expensive (3 lights, one at 4096²) and the scene is
   // static apart from blinds tweens and edit-mode geometry changes, so we
   // disable per-frame shadow re-rendering (renderer.shadowMap.autoUpdate =
@@ -274,7 +259,15 @@
   // pre-move state. Holding the dirty flag for a few frames gives the
   // matrix world / shadow camera time to converge.
   let shadowRefreshFrames = 0;
-  function markShadowsDirty() { shadowsDirty = true; shadowRefreshFrames = 3; }
+  function markShadowsDirty() {
+    shadowsDirty = true;
+    shadowRefreshFrames = 3;
+    // Every scene mutation (place / remove / swap / pickup / wall rebuild)
+    // routes through here, which makes it the one reliable invalidation
+    // point for the raycast-target cache (see getPlacedTargets).
+    _placedTargetsCache = null;
+  }
+  let _placedTargetsCache = null;
 
   // Desktop-surface support: when true, the scene's background and the WebGL
   // clear color both go fully transparent, so any part of the frame without
@@ -318,16 +311,29 @@
         clearInterval(o.userData._dayRollInterval);
         o.userData._dayRollInterval = null;
       }
-      const isSharedGlbGeom = o.userData && o.userData.glbSourcePath;
-      if (!isSharedGlbGeom && o.geometry && typeof o.geometry.dispose === 'function') {
+      const isSharedGlb = o.userData && o.userData.glbSourcePath;
+      if (!isSharedGlb && o.geometry && typeof o.geometry.dispose === 'function') {
         o.geometry.dispose();
       }
       const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
       for (const m of mats) {
         if (!m) continue;
-        // Dispose any texture maps the material holds before the material.
+        // Dispose texture maps the INSTANCE owns before the material — but
+        // never textures shared with others:
+        //   - _envMap is the module-wide PMREM env applied to mirror glass.
+        //     It has no CPU-side image, so disposing it here killed every
+        //     mirror reflection for the rest of the session (and the early-
+        //     return in loadMirrorEnv meant it was never rebuilt).
+        //   - GLB clone materials come from Material.clone(), which SHARES
+        //     texture references with the GLB_CACHE root and every sibling
+        //     clone (same hazard the geometry skip above guards against).
+        //     Per-clone textures a factory created itself (e.g. the iMac
+        //     screen) are tagged userData.ownedByInstance and still freed.
         for (const v of Object.values(m)) {
-          if (v && v.isTexture && typeof v.dispose === 'function') v.dispose();
+          if (!v || !v.isTexture || typeof v.dispose !== 'function') continue;
+          if (v === _envMap) continue;
+          if (isSharedGlb && !(v.userData && v.userData.ownedByInstance)) continue;
+          v.dispose();
         }
         if (typeof m.dispose === 'function') m.dispose();
       }
@@ -460,43 +466,11 @@
       ...opts
     });
   }
-  function metalMat(color) {
-    return new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.7, flatShading: true });
-  }
-  function emissiveMat(color, em) {
-    return new THREE.MeshStandardMaterial({ color, emissive: em, roughness: 0.6, flatShading: true });
-  }
-
-  // ── Cartoon outline (inverted-hull) ──────────────────────────────
-  // For each furniture mesh we attach a slightly-inflated black sibling
-  // with BackSide rendering. The original mesh draws on top, so all you
-  // see of the inflated copy is a rim around the silhouette.
-  //
-  // Knobs: OUTLINE_SCALE controls thickness (relative to the mesh's
-  // own scale), OUTLINE_COLOR the ink color. Tweak in one place.
-  // Cached material so all outlines share GPU state.
-  const OUTLINE_SCALE = 1.04;
-  const OUTLINE_COLOR = 0x1a1410;
-  const _outlineMat = new THREE.MeshBasicMaterial({
-    color: OUTLINE_COLOR,
-    side: THREE.BackSide,
-  });
-  // Outlines disabled — kept as a pass-through so box/cyl/sph callers
-  // don't need editing. To re-enable, restore the inverted-hull body
-  // below (creates a slightly-inflated BackSide sibling and adds it as
-  // a child of the mesh).
-  function withOutline(mesh, _scale = OUTLINE_SCALE) {
-    return mesh;
-  }
-
+  // (metalMat / emissiveMat / cyl / sph and the inverted-hull cartoon
+  // outline were removed — zero callers since the GLB furniture swap.
+  // Restore from git history if procedural primitives come back.)
   function box(w, h, d, color, opts) {
-    return withOutline(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, opts)));
-  }
-  function cyl(rTop, rBot, h, color, segs = 16, opts) {
-    return withOutline(new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, segs), mat(color, opts)));
-  }
-  function sph(r, color, segs = 12, opts) {
-    return withOutline(new THREE.Mesh(new THREE.SphereGeometry(r, segs, segs), mat(color, opts)));
+    return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, opts));
   }
   function place(mesh, x, y, z) { mesh.position.set(x, y, z); return mesh; }
   function group(...meshes) {
@@ -833,9 +807,18 @@
       toneMapped: false,
     });
 
+    // If the poster is torn down (edit-mode delete, drag-replace,
+    // updateProjects prune, refreshModels) before the image finishes loading,
+    // disposeObject has already disposed `mat` — which dispatches 'dispose'.
+    // Latch that so the late texture is freed instead of being attached to a
+    // dead material (where it would leak, never reachable for disposal).
+    let matDisposed = false;
+    mat.addEventListener('dispose', () => { matDisposed = true; });
+
     new THREE.TextureLoader().load(
       path,
       (tex) => {
+        if (matDisposed) { tex.dispose(); return; }
         tex.encoding = THREE.sRGBEncoding;
         tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
         mat.map = tex;
@@ -1143,6 +1126,9 @@
         // If the photo that just loaded is the one on screen, repaint now.
         if (SCENES[sceneIndex].photo === url) { composeBg(); draw(); tex.needsUpdate = true; }
       };
+      // Every other loader in this file logs its failures — a missing window
+      // photo otherwise shows as a silent flat-blue fill with no clue why.
+      rec.img.onerror = () => console.warn('[diorama] window photo failed to load:', url);
       rec.img.src = url;
       _photoCache[url] = rec;
       return rec;
@@ -1268,13 +1254,17 @@
     // by draw() to offset the photo pan. Independent of the redraw throttle.
     let _kbT = 0;
     // Cloud drift speed multiplier. 1.0 = original pace. Was
-    // previously exposed via the lighting debugger; baked in now.
-    // Default 0.5× — clouds drift slowly across the side window so the
-    // view reads as ambient atmosphere, not high winds.
+    // previously exposed via the lighting debugger; baked in now at 2.95×.
     let _speedMul = 2.95;
     const REDRAW_INTERVAL = 1 / 30;
     function update(dt) {
       _kbT += dt; // advance the Ken Burns clock (used only by photo scenes)
+      // Fully static scene (no clouds, no Ken Burns pan): the pixels never
+      // change between scene switches, so skip the 30fps repaint + ~2MB
+      // texture re-upload entirely. composeBg/nextScene/photo-onload all
+      // force an immediate draw when the content actually changes.
+      const sc = SCENES[sceneIndex];
+      if (sc.clouds === false && !(sc.photo && sc.pan)) return;
       // Always advance positions (cheap), but throttle the actual
       // redraw to keep texture-upload cost bounded.
       for (const c of clouds) {
@@ -1307,16 +1297,7 @@
     return { texture: tex, update, setSpeed, getSpeed, nextScene, getSceneName };
   }
 
-  // ── §5d · Tabletop trinkets ──────────────────────────────────────
-  // Built at final size — no makeScaled wrapper. Group has y=0 at the
-  // bottom of the item, so TabletopSurface can drop it straight onto
-  // the tier's surface plane.
-  function makeBookStack(color) {
-    const b1 = place(box(0.18, 0.04, 0.13, color || 0xc04035), 0, 0.02, 0);
-    const b2 = place(box(0.16, 0.035, 0.12, 0x3f6bc4), 0.005, 0.058, 0.005);
-    const b3 = place(box(0.14, 0.03, 0.11, 0x4a7c44), -0.005, 0.090, -0.005);
-    return group(b1, b2, b3);
-  }
+  // (makeBookStack removed — superseded by the books.glb trinket.)
 
   // ══════════════════════════════════════════════════════════════════
   // §6 · Wrappers — scale + center + GLB
@@ -1453,6 +1434,13 @@
       // the bones inherit the scale through their own matrix update.
       // We do this only when forcedScale is set, to avoid touching the
       // already-working GLBs.
+      //
+      // CAVEAT: for non-skinned matrix-mode nodes this premultiply stacks
+      // on top of inner.scale (scale applies twice; nested matrix-mode
+      // chains compound further). The one forcedScale user today
+      // (projects corkboard, 1.4) was tuned empirically against that net
+      // factor — treat forcedScale as "the knob you tune by eye", and
+      // don't reuse a value from one GLB on another.
       if (opts.forcedScale != null) {
         cloned.traverse(node => {
           if (node.matrixAutoUpdate === false && node.matrix) {
@@ -1862,9 +1850,21 @@
                           // painted texture lit by the room's lights only.
                           o.material.emissiveIntensity = 0;
                           o.material.emissive.set(0x000000);
+                          // Same disposed-material latch as makeImagePoster:
+                          // if the iMac is torn down before the screen JPG
+                          // arrives, free the late texture instead of
+                          // attaching it to a dead material.
+                          let imacMatDisposed = false;
+                          o.material.addEventListener('dispose', () => { imacMatDisposed = true; });
                           new THREE.TextureLoader().load('posters/imac-screen.jpg', (tex) => {
+                            if (imacMatDisposed) { tex.dispose(); return; }
                             tex.encoding = THREE.sRGBEncoding;
                             tex.flipY = false; // GLB UVs assume non-flipped
+                            // Created per-clone (not shared with the GLB
+                            // cache) — disposeObject may free it. NB: r128
+                            // textures don't ship a userData object.
+                            tex.userData = tex.userData || {};
+                            tex.userData.ownedByInstance = true;
                             o.material.map = tex;
                             o.material.emissiveMap = null;
                             o.material.color.set(0xffffff);
@@ -2168,6 +2168,10 @@
       const occByHostTier = this.occupiedCellsByHostTier();
       const slots = [];
       for (const [hostKey, host] of this.hosts.entries()) {
+        // One world-matrix refresh per host, not one per slot — for the
+        // desk's 12×6 tier the per-slot call forced 72 full-subtree matrix
+        // recomputations (host GLB + every trinket clone) per invocation.
+        host.mesh.updateMatrixWorld(true);
         for (const tier of host.tabletops) {
           const cellW = tier.w / tier.cols;
           const cellD = tier.d / tier.rows;
@@ -2185,7 +2189,6 @@
               // to keep the existing slot-marker rendering pipeline (which
               // expects world coords) unchanged.
               const worldPos = localPos.clone();
-              host.mesh.updateMatrixWorld(true);
               host.mesh.localToWorld(worldPos);
               slots.push({
                 slotKey: `host:${hostKey}:${tier.id}:${c},${r}`,
@@ -2400,7 +2403,10 @@
     // turn down the relevant light's intensity in the lighting
     // setup below rather than reintroducing tone-curve smoothing.
     renderer.toneMapping = THREE.NoToneMapping;
-    renderer.toneMappingExposure = 0.45;
+    // Exposure is ignored under NoToneMapping, but the lighting debugger can
+    // re-enable ACES at runtime — keep this at 1.0 so flipping tone mapping
+    // on doesn't suddenly darken the scene by a forgotten stale value.
+    renderer.toneMappingExposure = 1.0;
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(PALETTE.bg);
@@ -2475,6 +2481,9 @@
     winLight.shadow.camera.bottom = -3;
     winLight.shadow.bias = -0.0004;
     winLight.shadow.normalBias = 0.015;
+    // NB: shadow.radius is a no-op under PCFSoftShadowMap (the active type)
+    // — it only takes effect if the debugger switches to PCF/VSM. Kept so
+    // the debugger's radius slider has a sane starting value in that case.
     winLight.shadow.radius = 20.50;
     scene.add(winLight);
     _lights.winLight = winLight;
@@ -2493,16 +2502,8 @@
     // jump position. From this fixed camera their shadows were mostly hidden
     // behind their objects anyway, so the lit look is essentially unchanged.
     ceilLight.castShadow = false;
-    ceilLight.shadow.mapSize.set(2048, 2048);
-    ceilLight.shadow.camera.near = 0.5;
-    ceilLight.shadow.camera.far  = 10;
-    ceilLight.shadow.camera.left   = -4;
-    ceilLight.shadow.camera.right  =  4;
-    ceilLight.shadow.camera.top    =  4;
-    ceilLight.shadow.camera.bottom = -4;
-    ceilLight.shadow.bias = -0.0004;
-    ceilLight.shadow.normalBias = 0.015;
-    ceilLight.shadow.radius = 24.75;
+    // (No shadow config: with castShadow=false the map is never allocated,
+    // so mapSize/camera/bias settings here would be dead knobs.)
     scene.add(ceilLight);
     _lights.ceilLight = ceilLight;
     _lights.ceilHelper = new THREE.DirectionalLightHelper(ceilLight, 1.0);
@@ -2514,16 +2515,6 @@
     fillLight.target.position.set(-0.44, 2.76, 5.14);
     scene.add(fillLight.target);
     fillLight.castShadow = false; // fill only — see ceilLight note (winLight is the sole caster)
-    fillLight.shadow.mapSize.set(2048, 2048);
-    fillLight.shadow.camera.near = 0.5;
-    fillLight.shadow.camera.far  = 14;
-    fillLight.shadow.camera.left   = -4;
-    fillLight.shadow.camera.right  =  4;
-    fillLight.shadow.camera.top    =  4;
-    fillLight.shadow.camera.bottom = -3;
-    fillLight.shadow.bias = -0.0004;
-    fillLight.shadow.normalBias = 0.015;
-    fillLight.shadow.radius = 13.50;
     scene.add(fillLight);
     _lights.fillLight = fillLight;
     _lights.fillHelper = new THREE.DirectionalLightHelper(fillLight, 1.0);
@@ -2637,8 +2628,30 @@
     // (PlaneGeometry, and buildWallGeometry's normalised wall UVs). These
     // maps MUST stay linear — never set sRGBEncoding on a normal/roughness
     // map or the lighting goes wrong.
+    // Cache per file: the ceiling and walls both use wall-stucco.normal.png
+    // with different repeats. TextureLoader doesn't dedupe, so loading twice
+    // decoded + uploaded two identical GPU copies; sharing the image across
+    // clones costs one decode/upload while keeping independent repeats.
+    // NB: clone() snapshots `image` — cloning before the async load lands
+    // would freeze the clone at null, so late clones are stamped from the
+    // load callback instead.
+    const _stuccoCache = {};
     const _stuccoTex = (file, repU, repV) => {
-      const t = new THREE.TextureLoader().load(file);
+      let t;
+      const cached = _stuccoCache[file];
+      if (cached) {
+        t = cached.texture.clone();
+        if (cached.texture.image) t.needsUpdate = true;
+        else cached.pendingClones.push(t);
+      } else {
+        const entry = { texture: null, pendingClones: [] };
+        entry.texture = new THREE.TextureLoader().load(file, (tex) => {
+          for (const c of entry.pendingClones) { c.image = tex.image; c.needsUpdate = true; }
+          entry.pendingClones.length = 0;
+        });
+        _stuccoCache[file] = entry;
+        t = entry.texture;
+      }
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.repeat.set(repU, repV);
       t.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -3209,7 +3222,10 @@
       rec.mesh = newMesh;
       swapped = true;
     }
-    if (swapped) markShadowsDirty();
+    if (swapped) {
+      applyMirrorEnv(); // fresh meshes need the shared env map re-applied
+      markShadowsDirty();
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3295,6 +3311,12 @@
     if (def.tabletops && SURFACES.tabletop) {
       SURFACES.tabletop.registerHost(placementId, mesh, def.tabletops);
     }
+    // Freshly-built meshes get a bare glass material from the factory — if
+    // this piece is (or contains) the mirror, re-point its glass at the
+    // shared env map. Cheap traverse, idempotent, no-op before the HDRI
+    // loads. Without this, any path that rebuilds a placement (drag-move,
+    // undo, restore, refresh) left the mirror reflecting nothing.
+    applyMirrorEnv();
     // A new caster entered the scene — refresh shadow maps on the next frame.
     markShadowsDirty();
     return placementId;
@@ -3470,11 +3492,18 @@
   }
   function restoreLastDeleted() {
     if (state.heldPiece || state.armedItem) return;
-    const cmd = _deletedHistory.pop();
+    const cmd = _deletedHistory[_deletedHistory.length - 1];
     if (!cmd) return;
     // applyCommand handles 'remove' inverse → re-add at original slot
     // with original rotation and any trinkets that were riding the host.
-    applyCommand(cmd, 'inverse');
+    // Only consume the history entry if the restore actually landed — the
+    // original slot may be occupied now, and popping first would burn the
+    // only persistent record of the deletion on a failed restore.
+    if (!applyCommand(cmd, 'inverse')) {
+      console.warn('[diorama] restore failed — original slot occupied; entry kept');
+      return;
+    }
+    _deletedHistory.pop();
     savePlacements();
     saveDeletedHistory();
     updateRestoreUI();
@@ -3517,15 +3546,21 @@
     return false;
   }
 
+  // Returns false when the command could not be applied (e.g. the slot a
+  // piece would re-occupy has since been taken — undo commands match by
+  // content, and the room can legitimately change between push and undo).
+  // Callers must not treat a false return as "applied": ignoring it used to
+  // delete-the-piece-and-recreate-nothing on a failed 'move', then persist
+  // the loss.
   function applyCommand(cmd, direction) {
     // direction: 'forward' (apply / redo) or 'inverse' (undo)
     switch (cmd.type) {
       case 'place': {
         if (direction === 'forward') {
-          placePersisted(cmd.itemId, cmd.surface, cmd.slot, {
+          if (!placePersisted(cmd.itemId, cmd.surface, cmd.slot, {
             appId: cmd.appId || undefined,
             rotation: cmd.rotation || 0,
-          });
+          })) return false;
         } else {
           const target = findPlacementByContent(cmd.itemId, cmd.surface, cmd.slot);
           if (target) removePlacement(target.placementId);
@@ -3537,10 +3572,10 @@
           const target = findPlacementByContent(cmd.itemId, cmd.surface, cmd.slot);
           if (target) removePlacement(target.placementId);
         } else {
-          placePersisted(cmd.itemId, cmd.surface, cmd.slot, {
+          if (!placePersisted(cmd.itemId, cmd.surface, cmd.slot, {
             appId: cmd.appId || undefined,
             rotation: cmd.rotation || 0,
-          });
+          })) return false;
           if (cmd.trinkets && cmd.trinkets.length) {
             const host = findPlacementByContent(cmd.itemId, cmd.surface, cmd.slot);
             if (host) rePlaceTrinkets(cmd.trinkets, host.placementId);
@@ -3553,13 +3588,23 @@
         const to   = direction === 'forward' ? cmd.to   : cmd.from;
         const target = findPlacementByContent(cmd.itemId, from.surface, from.slot);
         if (target) removePlacement(target.placementId);
-        placePersisted(cmd.itemId, to.surface, to.slot, {
+        const newPid = placePersisted(cmd.itemId, to.surface, to.slot, {
           appId: cmd.appId || undefined,
           rotation: to.rotation || 0,
         });
+        if (!newPid) {
+          // Destination occupied: put the piece back in the slot we just
+          // vacated (same safety net the modal-move path has) instead of
+          // letting it vanish.
+          const back = placePersisted(cmd.itemId, from.surface, from.slot, {
+            appId: cmd.appId || undefined,
+            rotation: from.rotation || 0,
+          });
+          if (back && cmd.trinkets && cmd.trinkets.length) rePlaceTrinkets(cmd.trinkets, back);
+          return false;
+        }
         if (cmd.trinkets && cmd.trinkets.length) {
-          const host = findPlacementByContent(cmd.itemId, to.surface, to.slot);
-          if (host) rePlaceTrinkets(cmd.trinkets, host.placementId);
+          rePlaceTrinkets(cmd.trinkets, newPid);
         }
         break;
       }
@@ -3570,6 +3615,7 @@
         break;
       }
     }
+    return true;
   }
 
   function undo() {
@@ -3633,6 +3679,8 @@
   // to back:11,11 (above window); all app paintings repacked into
   // cols 0-8 and 21-23 (flanking the window).
   // v15: added office chair decoration in front of the desk (floor:11,3).
+  // v16: bump predates this repo's history (undocumented at the time —
+  // record the reason here on the next bump).
   const DECORATIONS_SEEDED_KEY = 'misen.dioramaDecsSeeded.v16';
   function loadSeededDecorations() {
     try {
@@ -3684,6 +3732,7 @@
   // Items flagged `cutsThroughWall` (today: glbWindow) become rectangular
   // holes at HOLE_SCALE × their slot footprint, in the wall's local
   // coordinate frame.
+  let _lastWallHolesKey = null;
   function rebuildWallGeometry() {
     if (!_backWallMesh || !SURFACES || !SURFACES.wall) return;
     const HOLE_SCALE = 0.85;
@@ -3721,6 +3770,14 @@
       if (parsed.panelId === 'back') backHoles.push(hole);
       else if (parsed.panelId === 'left') leftHoles.push(hole);
     }
+    // Skip the rebuild when nothing changed. savePlacements() calls this on
+    // EVERY drop/rotate/resize/move, and with no cutsThroughWall item in the
+    // catalog today the hole lists are always empty — disposing and
+    // rebuilding two ShapeGeometries (+ UV buffers + a shadow refresh) per
+    // save changed nothing.
+    const holesKey = JSON.stringify([backHoles, leftHoles]);
+    if (holesKey === _lastWallHolesKey) return;
+    _lastWallHolesKey = holesKey;
     const backGeom = buildWallGeometry(ROOM.width, ROOM.height, backHoles);
     const leftGeom = buildWallGeometry(ROOM.depth, ROOM.height, leftHoles);
     if (_backWallMesh.geometry) _backWallMesh.geometry.dispose();
@@ -3883,27 +3940,9 @@
     for (const proj of ordered) placeAppItemAuto(proj);
   }
 
-  function clearAllPlacements() {
-    // Remove tabletop placements first so their meshes detach cleanly while
-    // their hosts still exist; then remove the hosts (and unregister them).
-    for (const p of [...state.placements]) {
-      if (p.surface === 'tabletop') SURFACES.tabletop.remove(p.placementId);
-    }
-    for (const p of [...state.placements]) {
-      if (p.surface === 'tabletop') continue;
-      if (SURFACES.tabletop && SURFACES.tabletop.hosts.has(p.placementId)) {
-        SURFACES.tabletop.unregisterHost(p.placementId);
-      }
-      SURFACES[p.surface].remove(p.placementId);
-    }
-    state.placements = [];
-  }
-
-  function rebuildAppPlacements() {
-    clearAllPlacements();
-    autoPlaceAllApps();
-    savePlacements();
-  }
+  // (clearAllPlacements / rebuildAppPlacements removed — zero callers, and
+  // rebuildAppPlacements would have been wrong if called: it wiped the desk
+  // decoration and then auto-placed tabletop apps that need it as a host.)
 
   // ══════════════════════════════════════════════════════════════════
   // §11 · Slot markers (only shown in edit mode while an item is armed)
@@ -3911,71 +3950,57 @@
   function clearMarkers() {
     // Walk slotMarkers (not markerGroup.children) because tabletop markers
     // get parented to their host mesh — they live outside markerGroup.
+    // Geometry + material are SHARED across markers (see _markerGeom /
+    // _markerMat) — detach only, never dispose here.
     for (const m of state.slotMarkers) {
       if (m.parent) m.parent.remove(m);
-      if (m.geometry) m.geometry.dispose();
-      if (m.material && m.material.dispose) m.material.dispose();
     }
     state.slotMarkers = [];
-    state.hoverMarker = null;
-    // activeMarkers holds references into slotMarkers; the meshes are
-    // now disposed, so just clear the array.
-    state.activeMarkers.length = 0;
+  }
+  // Markers are pure POSITION/VALIDITY lookup tables for the held-piece
+  // snap logic: nothing renders them (the held mesh itself is the placement
+  // preview, plus the grid lines burned into the floor) and nothing raycasts
+  // them (floor/wall/tabletop snapping all use cursor→cell inference). So
+  // they're created invisible, and all of them share one material and one
+  // geometry per distinct footprint size. A wall pickup creates ~600
+  // markers; per-marker PlaneGeometry + MeshBasicMaterial used to mean ~600
+  // transparent draw calls per frame for invisible quads — during the exact
+  // interaction that also forces full shadow re-renders.
+  const _markerGeomCache = new Map(); // "w×h" -> PlaneGeometry
+  let _markerMat = null;
+  function _markerGeom(w, h) {
+    const key = w.toFixed(4) + 'x' + h.toFixed(4);
+    let g = _markerGeomCache.get(key);
+    if (!g) { g = new THREE.PlaneGeometry(w, h); _markerGeomCache.set(key, g); }
+    return g;
   }
   function makeSlotMarker(item, slot) {
-    // Sims / Animal Crossing-style placement feedback: markers start
-    // INVISIBLE (opacity 0) so the room doesn't fill with a sea of
-    // tinted tiles when something is armed. The pointermove handler
-    // reveals exactly one marker — the cell(s) under the cursor — at
-    // full tint, sized to the item's footprint, coloured green if the
-    // drop is valid or red if it isn't. The grid lines burned into the
-    // floor (added in setupRoom) carry the rest of the visual cue.
-    //
-    // Markers stay as raycast hit targets (raycasting ignores opacity),
-    // so the existing snap-to-marker code paths don't need to change.
-    const validColor = PALETTE.highlight;
-    const invalidColor = PALETTE.invalid;
-    const color = slot.valid ? validColor : invalidColor;
+    if (!_markerMat) _markerMat = new THREE.MeshBasicMaterial({ visible: false });
     let marker;
     if (item.surface === 'wall') {
       const fp = item.footprint || { w: 3, h: 3 };
       const cellW = slot.cellW || (0.7 / 3);
       const cellH = slot.cellH || (0.55 / 3);
-      // 0.98 (was 0.85): tile nearly edge-to-edge so the cursor
-      // reliably lands on a marker rather than falling into a gap.
-      // Walls have no free-fly fallback, so misses there cost more
-      // than they do on the floor — the held mesh just stops at the
-      // last snap. The 2% inset still lets the wall texture peek
-      // between adjacent markers when multiple are highlighted.
       const w = fp.w * cellW * 0.98;
       const h = fp.h * cellH * 0.98;
-      marker = new THREE.Mesh(
-        new THREE.PlaneGeometry(w, h),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, side: THREE.DoubleSide })
-      );
+      marker = new THREE.Mesh(_markerGeom(w, h), _markerMat);
       marker.position.copy(slot.worldPos);
       // Match the panel's rotation, then offset slightly along its normal
-      // so the marker doesn't z-fight the wall.
+      // (kept so getWorldPosition stays identical to the old visual layout).
       const r = slot.rotation || 0;
       marker.rotation.y = r;
       marker.position.x += Math.sin(r) * 0.005;
       marker.position.z += Math.cos(r) * 0.005;
     } else if (item.surface === 'tabletop') {
-      // Flat marker in the host's LOCAL frame — actual parenting onto
-      // the host happens in showSlotsForItem, which is what makes the
-      // marker rotate / translate with the host automatically.
+      // Marker in the host's LOCAL frame — actual parenting onto the host
+      // happens in showSlotsForItem, which is what makes the marker
+      // rotate / translate with the host automatically.
       const fp = item.footprint || { w: 1, d: 1 };
       const cellW = slot.cellW || 0.18;
       const cellD = slot.cellD || 0.18;
-      // 0.95 (was 0.82): nearly edge-to-edge for reliable cursor hits.
-      // Tabletop tiers are small in world space (a few cm per cell);
-      // the wider gap at 0.82 made misses common.
       const w = fp.w * cellW * 0.95;
       const d = fp.d * cellD * 0.95;
-      marker = new THREE.Mesh(
-        new THREE.PlaneGeometry(w, d),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, side: THREE.DoubleSide })
-      );
+      marker = new THREE.Mesh(_markerGeom(w, d), _markerMat);
       marker.rotation.x = -Math.PI / 2;
       marker.position.copy(slot.localPos);
       marker.position.y += 0.003;
@@ -3983,21 +4008,14 @@
       // Floor markers — default footprint is 1×1 (single cell).
       const fp = item.footprint || { w: 1, d: 1 };
       const fs = SURFACES.floor;
-      // 0.98 (was 0.92): markers tile nearly edge-to-edge so the cursor
-      // almost always lands on a marker and the user gets continuous
-      // green/red footprint feedback instead of falling into free-fly
-      // gaps. The 2% inset still lets the persistent floor grid lines
-      // peek between tiles.
       const w = fp.w * fs.cellW * 0.98;
       const d = fp.d * fs.cellD * 0.98;
-      marker = new THREE.Mesh(
-        new THREE.PlaneGeometry(w, d),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, side: THREE.DoubleSide })
-      );
+      marker = new THREE.Mesh(_markerGeom(w, d), _markerMat);
       marker.rotation.x = -Math.PI / 2;
       marker.position.copy(slot.worldPos);
       marker.position.y = 0.01;
     }
+    marker.visible = false; // lookup table only — never drawn
     marker.userData = { isMarker: true, slotKey: slot.slotKey, valid: slot.valid, surface: item.surface };
     return marker;
   }
@@ -4019,7 +4037,6 @@
   }
   function disarm() {
     state.armedItem = null;
-    state.armedAppId = null;
     clearMarkers();
   }
 
@@ -4339,6 +4356,15 @@
       _parallaxTargetX = 0;
       _parallaxTargetY = 0;
       hideMirrorReflection();
+      // Don't leave the hover tooltip showing / grab cursor active when the
+      // pointer exits over a piece at the canvas edge — nothing else resets
+      // them until the pointer comes back.
+      if (!state.heldPiece) {
+        appHoverEl.classList.remove('show');
+        setHoveredMesh(null);
+        setLinkedApp(null);
+        canvas.style.cursor = 'default';
+      }
     });
     canvas.addEventListener('pointerdown', onPointerDown);
     // pointerup is on window so a release outside the canvas (e.g. user
@@ -5056,14 +5082,9 @@
   // paint into a modal that has since been re-opened for app B.
   let _summaryRequestToken = 0;
 
-  function escSummary(s) {
-    return String(s ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
+  // Alias of escapeHtml (§misc helpers below) — kept as a name so the
+  // summary-rendering call sites read naturally, but one implementation.
+  function escSummary(s) { return escapeHtml(s); }
 
   function renderModalSummary(summary) {
     const box = modalEl.querySelector('.dior-modal-summary');
@@ -5297,75 +5318,11 @@
     card.style.visibility = '';
   }
 
-  function enterMoveMode(placement) {
-    // Snapshot the piece's identity, then remove it visually so the
-    // user can re-place it (including on its original slot).
-    state.movingPiece = {
-      itemId: placement.itemId,
-      surface: placement.surface,
-      slot: placement.slot,
-      appId: placement.appId,
-      rotation: placement.rotation || 0,
-      userScale: placement.userScale || 1,
-      // Snapshot any tabletop trinkets the piece is hosting so we can
-      // re-place them on the new (or original) host once the move
-      // commits. Mirrors pickUpHeld's pickedUpTrinkets path so the modal
-      // Move flow has parity with drag-to-move on hosts like the desk
-      // (without this, moving the desk silently wipes the laptop,
-      // inboxes, toast, typewriter, and book stack).
-      pickedUpTrinkets: [],
-    };
-    if (SURFACES.tabletop && SURFACES.tabletop.hosts.has(placement.placementId)) {
-      for (const p of state.placements) {
-        if (p.surface !== 'tabletop') continue;
-        const parsed = SURFACES.tabletop.parseSlot(p.slot);
-        if (!parsed || parsed.hostKey !== placement.placementId) continue;
-        state.movingPiece.pickedUpTrinkets.push({
-          itemId: p.itemId,
-          tierId: parsed.tierId,
-          c: parsed.c,
-          r: parsed.r,
-          appId: p.appId || null,
-          rotation: p.rotation || 0,
-        });
-      }
-      const removedTabletopIds = SURFACES.tabletop.unregisterHost(placement.placementId);
-      for (const tid of removedTabletopIds) {
-        const tIdx = state.placements.findIndex(x => x.placementId === tid);
-        if (tIdx >= 0) state.placements.splice(tIdx, 1);
-      }
-    }
-    SURFACES[placement.surface].remove(placement.placementId);
-    const idx = state.placements.findIndex(p => p.placementId === placement.placementId);
-    if (idx >= 0) state.placements.splice(idx, 1);
-    // Arm with the same item def so slot markers appear for that surface.
-    // Build the markers from the ROTATED footprint so what reads as a valid
-    // green cell is what placePersisted will actually try to fit on commit.
-    // Without this, a rotated non-square piece (e.g. a 4×2 TV cabinet turned
-    // 90°) shows un-rotated 4×2 valid cells but commits as 2×4 — landing it
-    // off-grid or on a blocker, where placePersisted returns null and the
-    // piece is lost. (The drag-to-move path already does this; this brings
-    // the modal Move path to parity.)
-    const def = ITEMS[placement.itemId];
-    if (def) {
-      state.armedItem = def;
-      showSlotsForItem(rotatedDefClone(def, placement.rotation || 0));
-    }
-    if (modalEl && modalEl._moveHintEl) modalEl._moveHintEl.classList.add('show');
-  }
-
+  // (enterMoveMode — the old "armed move" click-to-place flow — was removed:
+  // the modal Move button routes through pickUpHeld, which carries the piece
+  // on the cursor. cancelArmedOrMove remains as the Esc/cancel cleanup for
+  // any armed state.)
   function cancelArmedOrMove() {
-    if (state.movingPiece) {
-      // Restore the piece at its original slot AND rotation, then re-host
-      // any trinkets that were sitting on it. placePersisted returns the
-      // new host's placementId (which encodes the slot, so it's stable on
-      // round-trip back to the original slot).
-      const { itemId, surface, slot, appId, rotation, pickedUpTrinkets, userScale } = state.movingPiece;
-      state.movingPiece = null;
-      const newHostPid = placePersisted(itemId, surface, slot, { appId, rotation, userScale });
-      rePlaceTrinkets(pickedUpTrinkets, newHostPid);
-      savePlacements();
-    }
     if (modalEl && modalEl._moveHintEl) modalEl._moveHintEl.classList.remove('show');
     disarm();
   }
@@ -5413,20 +5370,25 @@
     if (h._tintInvalid === invalid) return;
     h._tintInvalid = invalid;
     h.mesh.traverse(o => {
-      if (!o.isMesh || !o.material || !o.material.emissive) return;
-      const mat = o.material;
-      if (mat.userData._tintBefore === undefined) {
-        mat.userData._tintBefore = {
-          emissive: mat.emissive.getHex(),
-          emissiveIntensity: mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 1,
-        };
-      }
-      if (invalid) {
-        mat.emissive.setHex(0xc8806f); // PALETTE.invalid
-        mat.emissiveIntensity = 0.55;
-      } else {
-        mat.emissive.setHex(mat.userData._tintBefore.emissive);
-        mat.emissiveIntensity = mat.userData._tintBefore.emissiveIntensity;
+      if (!o.isMesh || !o.material) return;
+      // Normalize multi-material meshes (an array has no .emissive, so GLB
+      // pieces with material groups never showed the red invalid tint).
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const mat of mats) {
+        if (!mat || !mat.emissive) continue;
+        if (mat.userData._tintBefore === undefined) {
+          mat.userData._tintBefore = {
+            emissive: mat.emissive.getHex(),
+            emissiveIntensity: mat.emissiveIntensity !== undefined ? mat.emissiveIntensity : 1,
+          };
+        }
+        if (invalid) {
+          mat.emissive.setHex(0xc8806f); // PALETTE.invalid
+          mat.emissiveIntensity = 0.55;
+        } else {
+          mat.emissive.setHex(mat.userData._tintBefore.emissive);
+          mat.emissiveIntensity = mat.userData._tintBefore.emissiveIntensity;
+        }
       }
     });
   }
@@ -5507,7 +5469,12 @@
       appId: placement.appId,
       lastValidSurface: placement.surface,
       lastValidSlot: placement.slot,
-      targetY: 0,
+      // Start at the mesh's current height — updateHeldAnimation writes
+      // targetY to position.y every frame, so initializing to 0 made wall
+      // posters / desk trinkets teleport to floor level on a modal "Move"
+      // (a click pickup, where no pointermove corrects it until the cursor
+      // moves).
+      targetY: mesh.position.y,
       pickedUpTrinkets,
       // Carry the user-resize through pickup → drop so a resized poster
       // doesn't snap back to 1× when you move it.
@@ -5546,10 +5513,6 @@
   function dropHeld() {
     const h = state.heldPiece;
     if (!h) return;
-    // Catalog spawns can be clicked before the cursor finds a valid
-    // slot. Bail rather than commit-at-null — the piece stays held and
-    // the user can keep dragging.
-    if (h.isNew && !h.lastValidSlot) return;
     // Refuse drop when the cursor is currently over an invalid cell.
     // The mesh is already glowing red as feedback; clicking should
     // not snap the piece back to its last valid spot (jarring) — keep
@@ -5566,24 +5529,28 @@
       rotation: h.currentRotation,
       userScale: h.userScale,
     });
+    if (!newPid) {
+      // The destination refused the placement (stale lastValidSlot after a
+      // rotate, grid-boundary rounding). The carried mesh is already gone —
+      // restore at the origin (vacated at pickup, so it's free) instead of
+      // letting the piece and its trinkets vanish.
+      const backPid = placePersisted(h.def.id, h.originalSurface, h.originalSlot, {
+        appId: h.appId,
+        rotation: h.originalRotation,
+        userScale: h.userScale,
+      });
+      rePlaceTrinkets(h.pickedUpTrinkets, backPid);
+      savePlacements();
+      hideHeldUI();
+      disarm();
+      canvas.style.cursor = 'default';
+      return;
+    }
     rePlaceTrinkets(h.pickedUpTrinkets, newPid);
 
-    if (h.isNew) {
-      // Catalog spawn → committed Place command. Rotation is captured
-      // since the user can R-rotate before dropping.
-      if (newPid) {
-        pushCommand({
-          type: 'place',
-          itemId: h.def.id,
-          surface: h.lastValidSurface,
-          slot: h.lastValidSlot,
-          appId: h.appId || null,
-          rotation: h.currentRotation || 0,
-        });
-      }
-    } else if (newPid && (h.lastValidSurface !== h.originalSurface
+    if (h.lastValidSurface !== h.originalSurface
                    || h.lastValidSlot !== h.originalSlot
-                   || h.currentRotation !== h.originalRotation)) {
+                   || h.currentRotation !== h.originalRotation) {
       // Existing-piece pickup → Move command, but only if anything
       // actually changed. A drag that ends back on the original slot
       // with the same rotation is effectively a no-op and shouldn't
@@ -5612,19 +5579,17 @@
     if (h.mesh.parent) h.mesh.parent.remove(h.mesh);
     // Restore (below) rebuilds a fresh mesh, so discard the carried one.
     disposeObject(h.mesh);
-    if (!h.isNew) {
-      // Existing-piece pickup → restore at original slot with original
-      // rotation and re-host any trinkets that were riding on it. Fresh
-      // catalog spawns have no original to restore — the mesh has been
-      // detached above and we just exit.
-      const newPid = placePersisted(h.def.id, h.originalSurface, h.originalSlot, {
-        appId: h.appId,
-        rotation: h.originalRotation,
-        userScale: h.userScale,
-      });
-      rePlaceTrinkets(h.pickedUpTrinkets, newPid);
-      savePlacements();
-    }
+    // Restore at original slot with original rotation and re-host any
+    // trinkets that were riding on it. (The held flow only ever carries
+    // existing placements — the catalog-spawn `isNew` path was removed
+    // with the "+ Add" catalog UI.)
+    const newPid = placePersisted(h.def.id, h.originalSurface, h.originalSlot, {
+      appId: h.appId,
+      rotation: h.originalRotation,
+      userScale: h.userScale,
+    });
+    rePlaceTrinkets(h.pickedUpTrinkets, newPid);
+    savePlacements();
     hideHeldUI();
     disarm();
     canvas.style.cursor = 'default';
@@ -5647,24 +5612,20 @@
     // Discarded for good (app-bound launchers get re-auto-placed fresh).
     disposeObject(h.mesh);
     markShadowsDirty();
-    if (!h.isNew) {
-      // Record so undo can restore the piece at its original slot with
-      // its original rotation and any trinkets that were riding on it.
-      // pickUpHeld already snapshotted the trinkets and unregistered the
-      // host, so we have everything we need. For a fresh catalog spawn
-      // (isNew) the piece was never committed — Remove and Cancel are
-      // the same thing; no undo step is recorded.
-      pushCommand({
-        type: 'remove',
-        itemId: h.def.id,
-        surface: h.originalSurface,
-        slot: h.originalSlot,
-        appId: h.appId || null,
-        rotation: h.originalRotation || 0,
-        trinkets: h.pickedUpTrinkets || [],
-      });
-      savePlacements();
-    }
+    // Record so undo can restore the piece at its original slot with
+    // its original rotation and any trinkets that were riding on it.
+    // pickUpHeld already snapshotted the trinkets and unregistered the
+    // host, so we have everything we need.
+    pushCommand({
+      type: 'remove',
+      itemId: h.def.id,
+      surface: h.originalSurface,
+      slot: h.originalSlot,
+      appId: h.appId || null,
+      rotation: h.originalRotation || 0,
+      trinkets: h.pickedUpTrinkets || [],
+    });
+    savePlacements();
     hideHeldUI();
     disarm();
     canvas.style.cursor = 'default';
@@ -5690,6 +5651,13 @@
       if (anyValid) {
         h.lastValidSlot = anyValid.userData.slotKey;
         h.lastValidSurface = anyValid.userData.surface;
+      } else {
+        // No slot fits the rotated footprint at all — flag the snap stale
+        // so an immediate click can't commit at a slot that now fails
+        // validation (dropHeld would dispose the mesh first and lose the
+        // piece). The next pointermove recomputes this.
+        h._currentSnapValid = false;
+        setHeldTint(h, true);
       }
     }
     h.mesh.rotation.y = h.currentRotation;
@@ -5705,10 +5673,15 @@
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
   function getPlacedTargets() {
+    // Called on every pointermove/pointerdown/contextmenu — a full world
+    // traverse (hundreds of GLB nodes) per mouse event showed up in drag
+    // profiles. Cached; invalidated by markShadowsDirty on any mutation.
+    if (_placedTargetsCache) return _placedTargetsCache;
     const targets = [];
     world.traverse(c => {
       if (c.isMesh && c.userData.placementId) targets.push(c);
     });
+    _placedTargetsCache = targets;
     return targets;
   }
 
@@ -5826,8 +5799,12 @@
   // list + connector share that origin). `behind` is true when the point is
   // behind the camera, in which case the caller should hide the line.
   const _connProjV = new THREE.Vector3();
+  // Scratch Box3 — worldToContainer runs every frame while a list row is
+  // linked, so don't allocate per call.
+  let _connBox = null;
   function worldToContainer(mesh) {
-    const bbox = new THREE.Box3().setFromObject(mesh);
+    if (!_connBox) _connBox = new THREE.Box3();
+    const bbox = _connBox.setFromObject(mesh);
     if (bbox.isEmpty()) return { x: 0, y: 0, behind: true };
     _connProjV.set(
       (bbox.min.x + bbox.max.x) / 2,
@@ -6022,13 +5999,25 @@
   // it's behind the camera / degenerate on screen. The canvas fills the
   // container, so these pixels double as container-relative overlay coords.
   const _mirrorProjV = new THREE.Vector3();
+  // Cached glass sub-mesh + scratch Box3 — this runs per frame while the
+  // cursor rests on the mirror, and the subtree traverse + Box3 allocation
+  // showed up in hover profiles. The cache keys off the root mesh, so a
+  // re-placed mirror (fresh mesh) re-resolves automatically.
+  let _mirrorGlassRoot = null;
+  let _mirrorGlassMesh = null;
+  let _mirrorBox = null;
   function getMirrorGlassRect() {
     const root = findAppMesh('daily-journal');
     if (!root) return null;
-    let glass = null;
-    root.traverse(o => { if (o.userData && o.userData.isMirrorGlass) glass = o; });
+    if (_mirrorGlassRoot !== root) {
+      _mirrorGlassRoot = root;
+      _mirrorGlassMesh = null;
+      root.traverse(o => { if (!_mirrorGlassMesh && o.userData && o.userData.isMirrorGlass) _mirrorGlassMesh = o; });
+    }
+    const glass = _mirrorGlassMesh;
     if (!glass) return null;
-    const bbox = new THREE.Box3().setFromObject(glass);
+    if (!_mirrorBox) _mirrorBox = new THREE.Box3();
+    const bbox = _mirrorBox.setFromObject(glass);
     if (bbox.isEmpty()) return null;
     const rect = renderer.domElement.getBoundingClientRect();
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -6140,13 +6129,6 @@
     // the grid stays as just the persistent floor lines.
     if (state.heldPiece) {
       const h = state.heldPiece;
-      // Reset previously-highlighted markers (cheap — typically 0–2).
-      for (const m of state.activeMarkers) {
-        m.material.opacity = 0;
-        m.scale.set(1, 1, 1);
-      }
-      state.activeMarkers.length = 0;
-
       let snapMarker = null;
       if (h.def.surface === 'floor') {
         // FLOOR: always-snap via cell-anchor inference. No raycast, no
@@ -6237,7 +6219,7 @@
         // No translucent footprint tile under the mesh — the held mesh
         // itself is the placement preview. Move it to the snap cell
         // every frame; tint it red when the cell would reject the drop.
-        const _snapWP = new THREE.Vector3();
+        if (!_snapWP) _snapWP = new THREE.Vector3();
         snapMarker.getWorldPosition(_snapWP);
         h.mesh.position.x = _snapWP.x;
         h.mesh.position.z = _snapWP.z;
@@ -6262,69 +6244,10 @@
       return;
     }
 
-    if (state.armedItem) {
-      // Marker hover (modal-Move path, where the piece isn't held but
-      // the user is choosing a destination). Same Sims-style treatment:
-      // one footprint highlight under the cursor, red for invalid hover,
-      // everything else hidden against the persistent floor grid. The
-      // closest-anchor tiebreak matches the held-mode logic — see the
-      // big comment in the heldPiece branch above for why this is
-      // needed on a fine grid with overlapping footprints.
-      // Reset only the markers we lit up last frame (see activeMarkers
-      // comment in the heldPiece branch).
-      for (const m of state.activeMarkers) {
-        m.material.opacity = 0;
-        m.scale.set(1, 1, 1);
-      }
-      state.activeMarkers.length = 0;
-      state.hoverMarker = null;
-      canvas.style.cursor = 'default';
-      let pick = null;
-      if (state.armedItem.surface === 'tabletop') {
-        // Tabletop destinations use plane-inference too (markers may be
-        // occluded/edge-on — same reason as the held branch).
-        const bestKey = inferTabletopSlotKey(state.armedItem);
-        if (bestKey) pick = state.slotMarkers.find(m => m.userData.slotKey === bestKey) || null;
-      } else {
-        const hits = raycaster.intersectObjects(state.slotMarkers, false);
-        if (hits.length === 1) {
-          pick = hits[0].object;
-        } else if (hits.length > 1) {
-          const cursorWP = projectCursorToFloor();
-          if (cursorWP) {
-            let bestDist = Infinity;
-            const _mWP = new THREE.Vector3();
-            for (const hit of hits) {
-              const m = hit.object;
-              m.getWorldPosition(_mWP);
-              const dx = _mWP.x - cursorWP.x;
-              const dz = _mWP.z - cursorWP.z;
-              const d = dx * dx + dz * dz;
-              if (d < bestDist) {
-                bestDist = d;
-                pick = m;
-              }
-            }
-          } else {
-            pick = hits[0].object;
-          }
-        }
-      }
-      if (pick) {
-        pick.material.opacity = pick.userData.valid ? 0.7 : 0.45;
-        pick.scale.set(1.05, 1.05, 1.05);
-        state.activeMarkers.push(pick);
-        if (pick.userData.valid) {
-          state.hoverMarker = pick;
-          canvas.style.cursor = 'pointer';
-        }
-      }
-      appHoverEl.classList.remove('show');
-      // Don't highlight placed pieces while the user is actively placing.
-      setHoveredMesh(null);
-      setLinkedApp(null);
-      return;
-    }
+    // (No armed-without-held branch: state.armedItem is only ever set
+    // together with state.heldPiece — the held branch above returns first.
+    // The old click-to-place "armed move" flow was removed with
+    // enterMoveMode.)
 
     // not armed — hover over any placed piece shows the grab cursor and
     // highlights it. Pieces with an appId additionally pop a title
@@ -6418,92 +6341,11 @@
       return;
     }
 
-    if (state.armedItem) {
-      // Two armed paths: modal Move (state.movingPiece set, restoring
-      // the original piece on cancel) and catalog placement (no
-      // movingPiece — decorative item with no appId).
-      const hits = raycaster.intersectObjects(state.slotMarkers, false);
-      if (hits.length) {
-        const m = hits[0].object;
-        if (m.userData.valid) {
-          // Markers now reflect the rotated footprint (see enterMoveMode),
-          // so the piece commits at its original rotation.
-          if (state.movingPiece) {
-            const { appId, rotation, pickedUpTrinkets,
-                    surface: fromSurface, slot: fromSlot, userScale } = state.movingPiece;
-            state.movingPiece = null;
-            // Preserve the original rotation (used to be silently dropped)
-            // and re-host snapshotted trinkets at their original tier/cell.
-            // newHostPid encodes the NEW slot, so the trinket slot keys
-            // get rebuilt against it inside rePlaceTrinkets. userScale is
-            // threaded through so a resized wall poster keeps its size
-            // across the move (otherwise it'd snap back to 1× on drop).
-            const movedItemId = state.armedItem.id;
-            const toSurface = state.armedItem.surface;
-            const toSlot = m.userData.slotKey;
-            let newHostPid = placePersisted(
-              movedItemId, toSurface, toSlot,
-              { appId, rotation: rotation || 0, userScale }
-            );
-            // Safety net: if the placement somehow fails (e.g. a rounding
-            // edge case at the grid boundary), restore the piece at its
-            // original slot rather than vaporising it. The origin slot was
-            // just vacated by enterMoveMode, so it's guaranteed free.
-            const placedAtTarget = !!newHostPid;
-            if (!newHostPid) {
-              newHostPid = placePersisted(
-                movedItemId, fromSurface, fromSlot,
-                { appId, rotation: rotation || 0, userScale }
-              );
-            }
-            rePlaceTrinkets(pickedUpTrinkets, newHostPid);
-            // Only record the move if the piece actually landed on the
-            // target and the destination differs from the origin — clicking
-            // the original slot (or falling back to it) is a no-op from the
-            // user's perspective and shouldn't burn an undo step.
-            if (placedAtTarget && (fromSurface !== toSurface || fromSlot !== toSlot)) {
-              pushCommand({
-                type: 'move',
-                itemId: movedItemId,
-                appId: appId || null,
-                from: { surface: fromSurface, slot: fromSlot, rotation: rotation || 0 },
-                to:   { surface: toSurface,   slot: toSlot,   rotation: rotation || 0 },
-                trinkets: pickedUpTrinkets || [],
-              });
-            }
-          } else {
-            // Legacy click-to-place path. The only entry that sets
-            // state.armedItem without heldPiece is modal Move (handled
-            // by the if-block above). The catalog UI that used to also
-            // reach here has been removed. Branch kept as a safety net
-            // in case a future flow arms an item without going through
-            // held mode.
-            const opts = state.armedAppId ? { appId: state.armedAppId } : {};
-            const placedItemId = state.armedItem.id;
-            const placedSurface = state.armedItem.surface;
-            const placedSlot = m.userData.slotKey;
-            const placedPid = placePersisted(placedItemId, placedSurface, placedSlot, opts);
-            if (placedPid) {
-              pushCommand({
-                type: 'place',
-                itemId: placedItemId,
-                surface: placedSurface,
-                slot: placedSlot,
-                appId: opts.appId || null,
-                rotation: 0,
-              });
-            }
-          }
-          savePlacements();
-          if (modalEl && modalEl._moveHintEl) modalEl._moveHintEl.classList.remove('show');
-          disarm();
-          return;
-        }
-      }
-      // Clicked outside any valid slot: cancel (and restore if moving).
-      cancelArmedOrMove();
-      return;
-    }
+    // (No armed-without-held commit path: armedItem implies heldPiece —
+    // the dropHeld() return above covers every armed click. The old
+    // click-to-place "armed move" commit, which raycast hits[0] instead of
+    // the highlighted hoverMarker and couldn't hit tabletop markers at
+    // grazing angles, was removed with enterMoveMode.)
 
     // Click the right-wall window to open the window popup (Blinds /
     // Change scene). Checked here (not earlier) so an in-progress
@@ -6548,25 +6390,9 @@
         }
       }
     }
-
-    // Mousedown on any placed piece (app-tagged or decorative) — record a
-    // candidate. Whether this becomes a click (→ launch modal, only for
-    // app pieces) or a drag (→ sticky-grab, any piece) depends on what
-    // happens next: see DRAG_THRESHOLD_PX promotion in onPointerMove and
-    // the click commit in onPointerUp.
-    const hits = raycaster.intersectObjects(getPlacedTargets(), true);
-    for (const h of hits) {
-      const o = findPlacedAncestor(h.object);
-      if (!o || !o.userData.placementId) continue;
-      const placement = state.placements.find(p => p.placementId === o.userData.placementId);
-      if (!placement) continue;
-      state.dragCandidate = {
-        startX: e.clientX,
-        startY: e.clientY,
-        placement,
-      };
-      return;
-    }
+    // (The piece hit-test above already recorded the drag candidate and
+    // returned — a second identical raycast here could never find anything
+    // new, so it was removed.)
   }
 
   function onPointerUp(e) {
@@ -6589,9 +6415,14 @@
     // pointerdown on the canvas commits the drop.
     if (state.heldPiece) return;
     // No drag happened: it was a plain click on a piece → open modal.
+    // Only when the release is still over the canvas, though — this handler
+    // lives on window (so off-canvas releases clear the candidate), and a
+    // sub-threshold press released over the sidebar/overlay should cancel,
+    // not pop the launch modal.
     if (state.dragCandidate) {
       const { placement } = state.dragCandidate;
       state.dragCandidate = null;
+      if (e.target !== canvas) return;
       setHoveredMesh(null);
       openAppModal(placement);
     }
@@ -6601,6 +6432,10 @@
     e.preventDefault();
     // Right-click is inert in camera debug mode.
     if (cameraDebug.enabled) return;
+    // Use THIS event's coordinates — the module-level `mouse` only reflects
+    // the last pointermove, which can be stale for a two-finger tap or a
+    // synthetic contextmenu, hitting whatever was under the previous hover.
+    getPointerNDC(e);
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(getPlacedTargets(), true);
     for (const h of hits) {
@@ -6785,6 +6620,14 @@
     // legacy key implied.
     let v = data.schemaVersion;
     if (typeof v !== 'number') v = 8;
+    // Data from a NEWER schema (rollback after an upgrade wrote it) can't
+    // be understood here — refuse rather than silently stamping it as
+    // current and parsing fields that may have changed meaning. The caller
+    // (loadPlacements' catch) backs the raw save up under the `.corrupt`
+    // key and falls back to auto-placement.
+    if (v > CURRENT_SCHEMA) {
+      throw new Error(`saved layout schema v${v} is newer than this build (v${CURRENT_SCHEMA})`);
+    }
     while (v < CURRENT_SCHEMA) {
       const next = v + 1;
       const fn = MIGRATIONS[next];
@@ -7036,6 +6879,11 @@
   // ══════════════════════════════════════════════════════════════════
   function onResize() {
     if (!container || !renderer) return;
+    // Re-read DPR: resize events also fire when the window moves between
+    // displays, and the ratio captured at init would leave the canvas
+    // blurry on a denser screen (or rendering 4× the pixels on a sparser
+    // one). setPixelRatio is a no-op when the value is unchanged.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const w = container.clientWidth || 1;
     const h = container.clientHeight || 1;
     renderer.setSize(w, h, false);
@@ -7107,7 +6955,10 @@
         shadowsDirty = false;
         if (shadowRefreshFrames > 0) shadowRefreshFrames--;
       }
-      if (_skyUpdate) _skyUpdate(dt);
+      // Skip the sky's 30fps canvas repaint + texture upload while the
+      // blinds are fully closed — the window is covered, nobody sees it.
+      // (The sky's own update() also early-outs for fully static scenes.)
+      if (_skyUpdate && !(_blinds && _blinds.currentProgress > 0.99)) _skyUpdate(dt);
       // Smoothly tween each shade slat between its closedY and openY.
       // Rate=5 gives a soft ~700ms raise/lower — quick enough to feel
       // responsive, slow enough to read as fabric in motion. Same
@@ -7191,6 +7042,16 @@
       console.error('MiseDiorama.init: THREE is not loaded');
       return;
     }
+    // `initialized` only flips true seconds later, inside the async GLB
+    // preload callback — without a synchronous latch, a second init() call
+    // during that window would build a second renderer/canvas and double up
+    // every window/document listener. (renderer.js guards its single call,
+    // but the demo copy and any future caller shouldn't have to know that.)
+    if (_initStarted) {
+      console.warn('MiseDiorama.init: already initialized — ignoring repeat call');
+      return;
+    }
+    _initStarted = true;
     container = opts.container;
     projects = (opts.projects || []).slice();
     onOpenProjectCb = opts.onOpenProject || null;
@@ -7281,6 +7142,7 @@
     //   • Keep everything else untouched.
     const validAppIds = new Set(projects.map(p => p.id));
     const placedAppIds = new Set();
+    let removed = 0;
     // Drop placements for apps that no longer exist (renamed, deleted, etc.)
     for (const p of [...state.placements]) {
       if (p.appId && !validAppIds.has(p.appId)) {
@@ -7296,6 +7158,7 @@
         SURFACES[p.surface].remove(p.placementId);
         const idx = state.placements.indexOf(p);
         if (idx >= 0) state.placements.splice(idx, 1);
+        removed++;
       } else if (p.appId) {
         placedAppIds.add(p.appId);
       }
@@ -7307,7 +7170,10 @@
       if (placedAppIds.has(project.id)) continue;
       if (placeAppItemAuto(project)) added++;
     }
-    if (added > 0) savePlacements();
+    // Persist on removals too — a pure prune used to skip the save, leaving
+    // the dropped placements in localStorage to be re-loaded and re-pruned
+    // on every launch (and skipping rebuildWallGeometry for them).
+    if (added > 0 || removed > 0) savePlacements();
     // Reflect any added/removed apps in the side list.
     rebuildAppList();
   }
@@ -7341,6 +7207,20 @@
     // ghost piece floating in the scene.
     if (state.heldPiece) cancelHeld();
     if (state.dragCandidate) state.dragCandidate = null;
+    // Same class of leftover as the popups below: pinned resize mode
+    // (modal "Resize") would otherwise survive the hide — the blue handle
+    // floats over the wall art and the nwse-resize cursor persists when
+    // the user comes back.
+    if (RESIZE.dragging) endResizeDrag();
+    exitResizeMode();
+    // Dismiss any open popup. onPointerDown early-returns while modalOpen /
+    // winMenuOpen / wallMenuOpen is set, so a popup left open across a
+    // hide()/show() cycle (e.g. a launch fired while the wall color picker was
+    // up) would leave the whole canvas inert on return until its backdrop is
+    // clicked. Closing them here guarantees show() comes back interactive.
+    closeModal();
+    closeWindowMenu();
+    closeWallMenu();
     // Clear any active link so the next show() doesn't reopen with a stale
     // glow/connector left over from before the launch transition.
     setLinkedApp(null);
@@ -7835,20 +7715,10 @@
     else if (k === 'win')  handleLight(L.winLight,  L.winHelper);
     else if (k === 'ceil') handleLight(L.ceilLight, L.ceilHelper);
     else if (k === 'fill') handleLight(L.fillLight, L.fillHelper);
-    else if (k === 'hdri') {
-      if (p === 'enable') scene.environment = val ? _envMap : null;
-      else if (p === 'intensity') {
-        scene.traverse((obj) => {
-          if (obj.isMesh && obj.material) {
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            for (const m of mats) if ('envMapIntensity' in m) m.envMapIntensity = val;
-          }
-        });
-      }
-    } else if (k === 'ssao' && ssaoPass) {
-      if (p === 'enable') ssaoPass.enabled = val;
-      else ssaoPass[p] = val;
-    } else if (k === 'scene') {
+    // (hdri / ssao handler branches removed: the HUD markup has no rows for
+    // either — there's no data-k="hdri"/"ssao" control to fire them — and
+    // ssaoPass is permanently null since post-processing was dropped.)
+    else if (k === 'scene') {
       if (p === 'wallColor' && L.wallMat) L.wallMat.color.set(val);
       else if (p === 'toneMap' && renderer) renderer.toneMapping = TONE_MAPS[val].value;
       else if (p === 'exposure' && renderer) renderer.toneMappingExposure = val;
@@ -7898,27 +7768,13 @@
     syncLight('win',  L.winLight,  L.winHelper);
     syncLight('ceil', L.ceilLight, L.ceilHelper);
     syncLight('fill', L.fillLight, L.fillHelper);
-    const hdriOn = el.querySelector('input[type=checkbox][data-k="hdri"][data-p="enable"]');
-    if (hdriOn) hdriOn.checked = !!scene.environment;
-    let envI = 1.0;
-    scene.traverse((obj) => {
-      if (envI === 1.0 && obj.isMesh && obj.material) {
-        const m = Array.isArray(obj.material) ? obj.material[0] : obj.material;
-        if (m && 'envMapIntensity' in m) envI = m.envMapIntensity;
-      }
-    });
-    setRange('hdri', 'intensity', envI);
+    // (hdri/ssao sync removed — no HUD rows exist for them; the env-map
+    // intensity scan traversed the whole scene to fill a control that was
+    // never rendered.)
     if (camera) setRange('camera', 'fov', baseFov);
     setRange('camera', 'parallaxX', PARALLAX_RANGE_X);
     setRange('camera', 'parallaxY', PARALLAX_RANGE_Y);
     if (L.sky && L.sky.getSpeed) setRange('sky', 'speed', L.sky.getSpeed());
-    if (ssaoPass) {
-      const ssaoOn = el.querySelector('input[type=checkbox][data-k="ssao"][data-p="enable"]');
-      if (ssaoOn) ssaoOn.checked = !!ssaoPass.enabled;
-      setRange('ssao', 'kernelRadius', ssaoPass.kernelRadius);
-      setRange('ssao', 'minDistance',  ssaoPass.minDistance);
-      setRange('ssao', 'maxDistance',  ssaoPass.maxDistance);
-    }
     const fogOn = el.querySelector('input[type=checkbox][data-k="fog"][data-p="enable"]');
     const fogColor = el.querySelector('input[type=color][data-k="fog"][data-p="color"]');
     if (fogOn) fogOn.checked = !!(scene && scene.fog);
@@ -7956,23 +7812,12 @@
     txt('win',  L.winLight);
     txt('ceil', L.ceilLight);
     txt('fill', L.fillLight);
-    let envI = null;
-    scene.traverse((obj) => {
-      if (envI === null && obj.isMesh && obj.material) {
-        const m = Array.isArray(obj.material) ? obj.material[0] : obj.material;
-        if (m && 'envMapIntensity' in m) envI = m.envMapIntensity;
-      }
-    });
-    if (envI !== null) setText('hdriIntensity', envI.toFixed(2));
+    // (hdri/ssao readouts removed — no data-d spans exist for them in the
+    // HUD markup, so the env-map scene scan ran for nothing every update.)
     if (camera)   setText('fov',       baseFov.toFixed(1) + '°');
     setText('parallaxX', PARALLAX_RANGE_X.toFixed(3));
     setText('parallaxY', PARALLAX_RANGE_Y.toFixed(3));
     if (L.sky && L.sky.getSpeed) setText('skySpeed', L.sky.getSpeed().toFixed(2) + '×');
-    if (ssaoPass) {
-      setText('ssaoRadius',  ssaoPass.kernelRadius.toFixed(3));
-      setText('ssaoMinDist', ssaoPass.minDistance.toFixed(4));
-      setText('ssaoMaxDist', ssaoPass.maxDistance.toFixed(3));
-    }
     if (scene && scene.fog) {
       setText('fogNear', scene.fog.near.toFixed(1));
       setText('fogFar',  scene.fog.far.toFixed(1));
@@ -8021,8 +7866,9 @@
 
   // ══════════════════════════════════════════════════════════════════
   // §16 · Wall-item drag-corner resize
-  //   • A small blue handle appears at the top-right corner of the
-  //     hovered wall item.
+  //   • Entered via the modal's "Resize" button (enterResizeMode), which
+  //     pins a small blue handle at the top-right corner of the wall item.
+  //     (There is no hover-driven path.)
   //   • Pointer-down on the handle starts a resize. Pointer-move scales
   //     the item proportionally about its center; pointer-up commits and
   //     persists the new scale to localStorage.
@@ -8128,20 +7974,9 @@
     RESIZE.hoveredPid = null;
   }
 
-  // Find the placement under the cursor restricted to wall items only.
-  // Returns { placement, mesh } or null. Reused by hover + handle-pickup.
-  function pickWallPlacement() {
-    const hits = raycaster.intersectObjects(getPlacedTargets(), true);
-    for (const h of hits) {
-      const o = findPlacedAncestor(h.object);
-      if (!o || !o.userData.placementId) continue;
-      if (o.userData.surfaceId !== 'wall') return null;
-      const placement = state.placements.find(p => p.placementId === o.userData.placementId);
-      if (!placement) return null;
-      return { placement, mesh: o };
-    }
-    return null;
-  }
+  // (pickWallPlacement removed — the hover-driven resize-handle path it
+  // served was never wired up; the handle only appears via the modal's
+  // Resize button → enterResizeMode.)
 
   // Raycast the handle itself. Called from onPointerDown BEFORE the
   // normal placement hit-test so a click on the handle starts a resize

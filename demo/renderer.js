@@ -5,14 +5,22 @@
 // would throw and abort whatever bootstrap function it was inside of.
 let toastTimer = null;
 
-// [DEBUG] Surface uncaught errors and rejected promises as visible banners
-// at the top of the window so we can diagnose without DevTools.
+// [DEBUG] Surface uncaught errors and rejected promises as a visible banner
+// at the top of the window so we can diagnose without DevTools. A single
+// reusable banner (click to dismiss) — appending one per error let a
+// recurring rejection inside an interval stack undismissable banners and
+// grow the DOM forever.
 (function installErrorBanner(){
+  let bannerEl = null;
   function makeBanner(text){
-    const b = document.createElement('div');
-    b.textContent = text;
-    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:8px 12px;background:#fee;color:#900;font:12px/1.4 -apple-system,sans-serif;border-bottom:2px solid #c00;white-space:pre-wrap;';
-    document.body.appendChild(b);
+    if (!bannerEl || !bannerEl.isConnected) {
+      bannerEl = document.createElement('div');
+      bannerEl.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:8px 12px;background:#fee;color:#900;font:12px/1.4 -apple-system,sans-serif;border-bottom:2px solid #c00;white-space:pre-wrap;cursor:pointer;';
+      bannerEl.title = 'Click to dismiss';
+      bannerEl.addEventListener('click', () => { bannerEl.remove(); });
+      document.body.appendChild(bannerEl);
+    }
+    bannerEl.textContent = text + '\n(click to dismiss)';
   }
   window.addEventListener('error', (e) => {
     makeBanner(`JS ERROR: ${e.message}\n  at ${e.filename}:${e.lineno}:${e.colno}`);
