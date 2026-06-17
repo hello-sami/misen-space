@@ -12,7 +12,27 @@
  * source needed).
  */
 
+// Kill switch: when true, the entire /demo/* path is taken OFFLINE — every
+// request returns a 404 page regardless of auth. To bring the demo back,
+// flip this to false and redeploy (no other change needed).
+const DEMO_OFFLINE = true;
+
 const REALM = 'Misen demo';
+
+function offline() {
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><title>Misen demo — offline</title>' +
+    '<body style="font:16px/1.6 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;' +
+    'background:#faf9f6;color:#1f2328;margin:0;display:flex;min-height:100vh;' +
+    'align-items:center;justify-content:center;text-align:center;padding:24px">' +
+    '<div><h1 style="font-size:22px;margin:0 0 8px">The Misen demo is offline</h1>' +
+    '<p style="color:#6b7280;margin:0">This preview isn’t available right now.</p></div></body>',
+    {
+      status: 404,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    }
+  );
+}
 
 function unauthorized(msg) {
   return new Response(msg || 'Authentication required.', {
@@ -37,6 +57,12 @@ function safeEqual(a, b) {
 
 export const onRequest = async (context) => {
   const { request, env, next } = context;
+
+  // Demo taken offline — short-circuit before any auth/asset handling.
+  if (DEMO_OFFLINE) {
+    return offline();
+  }
+
   const expected = env.DEMO_PASSWORD;
 
   // No password configured → demo is OPEN. To lock it down later, just add a
