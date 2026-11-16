@@ -6,6 +6,23 @@ personal local-first apps. The home of the dollhouse.
 Static HTML + one Cloudflare Pages Function for the email signup. Deployed via
 GitHub → Cloudflare Pages auto-deploy.
 
+## Current status: the homepage redirects to samismith.com (on purpose)
+
+Since 2026-06-08, `https://misen.space/` and `/index.html` send visitors to
+`https://samismith.com/` with a **302** (temporary). This is intentional, not a
+broken deploy. It lives in `_redirects` (commit `fe86dcc`).
+
+- Misen's public home for now is samismith.com/misen. The web demo was taken
+  offline (2026-06-17, `adef2d0`) and then removed (2026-06-22, `e1c4cab`),
+  to be rebuilt from scratch later.
+- It's a 302 so it can be undone. **To bring the landing page back:** delete
+  the two rules in `_redirects`, push to `main`, and Pages redeploys.
+- Only `/` and `/index.html` redirect. `/credits` (3D model attributions) and
+  `/api/signup` still work, but with the homepage redirected nobody reaches the
+  signup form.
+- Everything in this folder is served publicly (the Pages output directory is
+  the repo root), so keep private notes out of it.
+
 ## Layout
 
 ```
